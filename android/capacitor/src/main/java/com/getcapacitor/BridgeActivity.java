@@ -1,29 +1,58 @@
 package com.getcapacitor;
 
+import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.PersistableBundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.webkit.WebView;
 
 import com.getcapacitor.android.R;
+import com.getcapacitor.cordova.MockCordovaWebViewImpl;
 import com.getcapacitor.plugin.App;
 
+import org.apache.cordova.ConfigXmlParser;
+import org.apache.cordova.CordovaInterfaceImpl;
+import org.apache.cordova.CordovaPreferences;
+import org.apache.cordova.PluginEntry;
+import org.apache.cordova.PluginManager;
+
+import java.util.ArrayList;
+import java.util.List;
+
 public class BridgeActivity extends AppCompatActivity {
-  private Bridge bridge;
+  protected Bridge bridge;
+  public CordovaInterfaceImpl cordovaInterface;
+  private ArrayList<PluginEntry> pluginEntries;
+  PluginManager pluginManager;
+  private CordovaPreferences preferences;
 
   private int activityDepth = 0;
 
   private String lastActivityPlugin;
 
+  private List<Class<? extends Plugin>> initialPlugins = new ArrayList<>();
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    setContentView(R.layout.bridge_layout_main);
-    this.load(savedInstanceState);
   }
 
+  protected void init(Bundle savedInstanceState, List<Class<? extends Plugin>> plugins) {
+    this.initialPlugins = plugins;
+
+    loadConfig(this.getApplicationContext(),this);
+
+    getApplication().setTheme(getResources().getIdentifier("AppTheme_NoActionBar", "style", getPackageName()));
+    setTheme(getResources().getIdentifier("AppTheme_NoActionBar", "style", getPackageName()));
+    setTheme(R.style.AppTheme_NoActionBar);
+    WebView.setWebContentsDebuggingEnabled(true);
+
+    setContentView(R.layout.bridge_layout_main);
+
+    this.load(savedInstanceState);
+  }
 
   /**
    * Load the WebView and create the Bridge
@@ -32,11 +61,27 @@ public class BridgeActivity extends AppCompatActivity {
     Log.d(Bridge.TAG, "Starting BridgeActivity");
 
     WebView webView = findViewById(R.id.webview);
-    bridge = new Bridge(this, webView);
+    cordovaInterface = new CordovaInterfaceImpl(this);
+    if (savedInstanceState != null) {
+      cordovaInterface.restoreInstanceState(savedInstanceState);
+    }
+
+    MockCordovaWebViewImpl mockWebView = new MockCordovaWebViewImpl(this.getApplicationContext());
+    mockWebView.init(cordovaInterface, pluginEntries, preferences, webView);
+
+    this.pluginManager = mockWebView.getPluginManager();
+    cordovaInterface.onCordovaInit(this.pluginManager);
+    bridge = new Bridge(this, webView, initialPlugins, cordovaInterface, this.pluginManager);
+
+    Splash.showOnLaunch(this);
 
     if (savedInstanceState != null) {
       bridge.restoreInstanceState(savedInstanceState);
     }
+  }
+
+  public Bridge getBridge() {
+    return this.bridge;
   }
 
   /**
@@ -133,7 +178,6 @@ public class BridgeActivity extends AppCompatActivity {
     if (this.bridge == null) {
       return;
     }
-
     this.bridge.onActivityResult(requestCode, resultCode, data);
   }
 
@@ -144,5 +188,22 @@ public class BridgeActivity extends AppCompatActivity {
     }
 
     this.bridge.onNewIntent(intent);
+  }
+
+  @Override
+  public void onBackPressed() {
+    if (this.bridge == null) {
+      return;
+    }
+
+    this.bridge.onBackPressed();
+  }
+
+  public void loadConfig(Context context, Activity activity) {
+    ConfigXmlParser parser = new ConfigXmlParser();
+    parser.parse(context);
+    preferences = parser.getPreferences();
+    preferences.setPreferencesBundle(activity.getIntent().getExtras());
+    pluginEntries = parser.getPluginEntries();
   }
 }

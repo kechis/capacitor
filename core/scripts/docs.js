@@ -8,8 +8,10 @@
 var fs = require('fs');
 var os = require('os');
 var path = require('path');
+var util = require('util');
 
 var SITE_DIR = path.join(process.cwd(), '../site');
+var SITE_OUTPUT_DIR = 'src/assets/docs-content/apis';
 
 const buildTypeLookup = (nodes) => {
   let d = {};
@@ -20,18 +22,19 @@ const buildTypeLookup = (nodes) => {
 const writeIndexHtmlOutput = (plugin, string) => {
   const pluginNameSplitCapitalized = plugin.name.match(/[A-Z][a-z]+/g);
   const targetDirName = pluginNameSplitCapitalized.slice(0, pluginNameSplitCapitalized.length-1).join('-').toLowerCase();
-  const p = path.join(SITE_DIR, 'www/docs-content/apis', targetDirName, 'api-index.html');
+  const p = path.join(SITE_DIR, SITE_OUTPUT_DIR, targetDirName, 'api-index.html');
   try {
     fs.writeFileSync(p, string, { encoding: 'utf8' });
   } catch(e) {
     console.error('Unable to write docs for plugin ', targetDirName);
+    console.error(e);
   }
 };
 
 const writeDocumentationHtmlOutput = (plugin, string) => {
   const pluginNameSplitCapitalized = plugin.name.match(/[A-Z][a-z]+/g);
   const targetDirName = pluginNameSplitCapitalized.slice(0, pluginNameSplitCapitalized.length-1).join('-').toLowerCase();
-  const p = path.join(SITE_DIR, 'www/docs-content/apis', targetDirName, 'api.html');
+  const p = path.join(SITE_DIR, SITE_OUTPUT_DIR, targetDirName, 'api.html');
   console.log('WRITING', p);
   try {
     fs.writeFileSync(p, string, { encoding: 'utf8' });
@@ -60,7 +63,12 @@ const generateIndexForPlugin = (plugin) => {
       return;
     }
     method.signatures.forEach((signature, index) => {
-      html.push(`<div class="avc-code-method-name"><anchor-link to="method-${method.name}-${index}">${method.name}()</anchor-link></div>`);
+      var paramString = '';
+      const eventNameParam = signature.parameters[0];
+      if (eventNameParam && eventNameParam.type.type == 'stringLiteral') {
+        paramString = `'${eventNameParam.type.value}'`;
+      }
+      html.push(`<div class="avc-code-method-name"><anchor-link to="method-${method.name}-${index}">${method.name}(${paramString})</anchor-link></div>`);
     })
   });
 
@@ -100,6 +108,8 @@ const generateDocumentationForPlugin = (plugin) => {
   methodChildren.forEach(method => methodBuild(method));
   listenerChildren.forEach(method => methodBuild(method));
 
+  html.push('<h3 id="interfaces">Interfaces</h3>');
+
   interfacesUsed.forEach(interface => {
     const interfaceDecl = typeLookup[interface.id];
     if(!interfaceDecl) {
@@ -114,7 +124,7 @@ const generateDocumentationForPlugin = (plugin) => {
     }
 
     html.push(`
-    <div class="avc-code-interface">
+    <div class="avc-code-interface" id="type-${interface.id}">
       <div class="avc-code-line">
         <span class="avc-code-keyword">${kindString.toLowerCase()}</span> <span class="avc-code-type-name">${interface.name}</span>
         <span class="avc-code-brace">{</span>
@@ -123,12 +133,16 @@ const generateDocumentationForPlugin = (plugin) => {
 
     if(interfaceDecl.children) {
       html.push(...interfaceDecl.children.map(c => {
+        const nameString = c.type.name ? c.type.name : c.type.value ? `'${c.type.value}'` : 'any';
+        if (!c.type.name && !c.type.value) {
+          console.log(c);
+        }
         return `
           <div class="avc-code-interface-param">
             <div class="avc-code-param-comment">${c.comment && `// ${c.comment.shortText}` || ''}</div>
             <div class="avc-code-line"><span class="avc-code-param-name">${c.name}</span>
               ${c.flags && c.flags.isOptional ? '<span class="avc-code-param-optional">?</span>' : ''}${kindString !== 'Enum' && `:
-              ${c.type && `<avc-code-type type-id="${c.type.id}">${c.type.name}</avc-code-type>` || ''}` || ''}
+              ${c.type.id && `<avc-code-type type-id="${c.type.id}">${nameString}</avc-code-type>` || `<avc-code-type>${nameString}</avc-code-type>`}` || ''}
             </div>
           </div>`;
       }));
@@ -194,6 +208,9 @@ const generateMethodParamDocs = (signature) => {
     html.push(`<div class="avc-code-method-param-info">
                 <span class="avc-code-method-param-info-name">${param.name}</span>
                 `)
+
+    html.push(getParamTypeName(param));
+    /*
     if (param.type.type == 'reference') {
       if(param.type.id) {
         html.push(`<avc-code-type type-id="${param.type.id}">${param.type.name}</avc-code-type>`);
@@ -205,6 +222,7 @@ const generateMethodParamDocs = (signature) => {
     } else {
       html.push(`<span class="avc-code-type-name">${param.type.name}</span>`);
     }
+    */
 
     if (param.comment) {
       html.push(`<div class="avc-code-method-param-comment">${param.comment.text}</div>`);
@@ -224,9 +242,9 @@ const generateMethodParamDocs = (signature) => {
 }
 
 const generateMethodSignature = (method, signature, signatureIndex) => {
+  //console.log(util.inspect(signature, {showHidden: false, depth: 20}))
   const parts = [`<div class="avc-code-method">
-                    <div class="avc-code-method-anchor-point" id="method-${method.name}-${signatureIndex}"></div>
-                    <h3 class="avc-code-method-header">${method.name}</h3>
+                    <h3 class="avc-code-method-header" id="method-${method.name}-${signatureIndex}">${method.name}</h3>
                     <div class="avc-code-method-signature">
                       <span class="avc-code-method-name">${method.name}</span>`, '<span class="avc-code-paren">(</span>'];
 
@@ -261,6 +279,7 @@ const generateMethodSignature = (method, signature, signatureIndex) => {
   return parts.join('');
 }
 
+// Generate a type string for a param type
 const getParamTypeName = (param) => {
   const t = param.type.type;
   if(t == 'reference') {
@@ -274,11 +293,47 @@ const getParamTypeName = (param) => {
     return `<span class="avc-code-string">"${param.type.value}"</span>`;
   } else if(t == 'intrinsic') {
     return `<avc-code-type>${param.type.name}</avc-code-type>`;
+  } else if(t == 'reflection') {
+    return `<avc-code-type>${generateReflectionType(param.type)}</avc-code-type>`;
   } else if(param.type.name) {
     return `<avc-code-type>${param.type.name}</avc-code-type>`;
   }
   return '<avc-code-type>any</avc-code-type>';
 };
+
+// Generate a type string for a reflection type
+const generateReflectionType = (t) => {
+  var d = t.declaration;
+  var c = d.children;
+  var s = d.signatures && d.signatures[0];
+
+  if (s && s.kind == 4096) { // Call signature
+    var parts = ['('];
+
+    s.parameters.forEach((param, index) => {
+      parts.push(`${param.name}: ${getParamTypeName(param)}`);
+      if (index < s.parameters.length-1) {
+        parts.push(', ');
+      }
+    });
+    parts.push(') => ');
+    parts.push(getReturnTypeName(s.type));
+    return parts.join('');
+  } else if(c) {
+    var parts = ['{ '];
+    c.forEach(child => {
+      parts.push(`${child.name}: ${getParamTypeName(child)}`);
+    });
+    parts.push(' }');
+    return parts.join('');
+  }
+  return 'any';
+}
+
+// Generate a type string for an intrinsic type (i.e. 'void')
+const generateIntrinsicType = (type) => {
+  return type.name;
+}
 
 const getReturnTypeName = (returnType) => {
   const r = returnType;
@@ -292,11 +347,19 @@ const getReturnTypeName = (returnType) => {
 
   if(r.typeArguments) {
     html.push('<span class="avc-code-typearg-bracket">&lt;</span>');
-    r.typeArguments.forEach(a => {
+    r.typeArguments.forEach((a, i) => {
       if(a.id) {
         html.push(`<avc-code-type type-id="${a.id}">${a.name}</avc-code-type>`);
+      } else if(a.type == 'reflection') {
+        html.push(generateReflectionType(a));
+      } else if(a.type == 'intrinsic') {
+        html.push(generateIntrinsicType(a));
       } else {
         html.push(a.name);
+      }
+
+      if(i < r.typeArguments.length-1) {
+        html.push(', ');
       }
     })
     html.push('<span class="avc-code-typearg-bracket">&gt;</span>');

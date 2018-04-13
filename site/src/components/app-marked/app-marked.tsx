@@ -1,10 +1,11 @@
-import { Component, Prop, PropDidChange, State } from '@stencil/core';
+import { Component, Prop, Element, Watch, State } from '@stencil/core';
 
 @Component({
   tag: 'app-marked',
   styleUrl: 'app-marked.scss'
 })
 export class AppMarked {
+  @Element() el: Element;
 
   @Prop() doc: string;
   @Prop({ context: 'isServer' }) private isServer: boolean;
@@ -15,9 +16,17 @@ export class AppMarked {
     return this.fetchNewContent();
   }
 
-  @PropDidChange('doc')
+  componentDidLoad() {
+    this.bindHeadings(this.el);
+  }
+
+  componentDidUpdate() {
+    this.bindHeadings(this.el);
+  }
+
+  @Watch('doc')
   fetchNewContent() {
-    return fetch(`/capacitor/docs-content/${this.doc}`)
+    return fetch(`/assets/docs-content/${this.doc}`)
       .then(response => response.text())
       .then(data => {
         this.content = data;
@@ -36,7 +45,31 @@ export class AppMarked {
           })
         }
 
-      });
+      }).catch(err => {
+        console.error('UNABLE TO LOAD', err);
+      })
+  }
+
+  bindHeadings(el: Element) {
+    const headings = Array.from(el.querySelectorAll('h1,h2,h3,h4,h5'));
+    headings.forEach(h => {
+      h.classList.add('anchor-link-relative');
+      var link = document.createElement('anchor-link');
+      link.className = 'hover-anchor';
+      if (h.id) {
+        link.to = h.id;
+      }
+      link.innerHTML = '#';
+      h.insertBefore(link, h.firstChild);
+    });
+
+    setTimeout(() => {
+      const hash = window.location.hash;
+      if (hash) {
+        window.location.hash = '';
+        window.location.hash = hash;
+      }
+    }, 50);
   }
 
   render() {

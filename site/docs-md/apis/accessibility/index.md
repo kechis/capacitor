@@ -1,3 +1,5 @@
+<plugin-platforms platforms="ios,android"></plugin-platforms>
+
 # Accessibility
 
 The Accessibility API makes it easy to know when a user has a screen reader enabled, as well as programatically speaking
@@ -8,24 +10,26 @@ labels through the connected screen reader.
 ## Example
 
 ```typescript
-import { Plugins } from '@avocadojs/core';
+import { Plugins } from '@capacitor/core';
 
-Plugins.Accessibility.addListener('accessibilityScreenReaderStateChange', (err, state) => {
+const { Accessibility, Modals } = Plugins;
+
+Accessibility.addListener('accessibilityScreenReaderStateChange', (state) => {
   console.log(state.value);
 });
 
 async isVoiceOverEnabled() {
-  var vo = await Plugins.Accessibility.isScreenReaderEnabled();
-  alert('Voice over enabled? ' + vo);
+  var vo = await Accessibility.isScreenReaderEnabled();
+  alert('Voice over enabled? ' + vo.value);
 }
 
 async speak() {
-  var value = await Plugins.Modals.prompt({
+  var value = await Modals.prompt({
     title: "Value to speak",
     message: "Enter the value to speak"
   });
 
-  Plugins.Accessibility.speak(value.value);
+  Accessibility.speak({value: value.value});
 }
 ```
 

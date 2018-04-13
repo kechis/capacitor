@@ -1,6 +1,10 @@
+<plugin-platforms platforms="ios,android"></plugin-platforms>
+
 # Haptics
 
 The Haptics API provides physical feedback to the user through touch or vibration.
+
+<plugin-api index="true" name="haptics"></plugin-api>
 
 ## Android Notes
 
@@ -16,11 +20,13 @@ To use vibration, you must add this permission to your `AndroidManifest.xml` fil
 import {
   Plugins,
   HapticsImpactStyle
-} from '@avocadojs/core';
+} from '@capacitor/core';
+
+const { Haptics } = Plugins;
 
 export class HapticsExample {
   hapticsImpact(style = HapticsImpactStyle.Heavy) {
-    Plugins.Haptics.impact({
+    Haptics.impact({
       style: style
     });
   }
@@ -34,19 +40,19 @@ export class HapticsExample {
   }
 
   hapticsVibrate() {
-    Plugins.Haptics.vibrate();
+    Haptics.vibrate();
   }
 
   hapticsSelectionStart() {
-    Plugins.Haptics.selectionStart();
+    Haptics.selectionStart();
   }
 
   hapticsSelectionChanged() {
-    Plugins.Haptics.selectionChanged();
+    Haptics.selectionChanged();
   }
 
   hapticsSelectionEnd() {
-    Plugins.Haptics.selectionEnd();
+    Haptics.selectionEnd();
   }
 }
 ```

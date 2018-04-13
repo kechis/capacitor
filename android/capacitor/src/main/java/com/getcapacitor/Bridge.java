@@ -3,11 +3,14 @@ package com.getcapacitor;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.text.TextUtils;
 import android.util.Log;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -28,12 +31,26 @@ import com.getcapacitor.plugin.Keyboard;
 import com.getcapacitor.plugin.Modals;
 import com.getcapacitor.plugin.Network;
 import com.getcapacitor.plugin.Photos;
+import com.getcapacitor.plugin.Share;
 import com.getcapacitor.plugin.SplashScreen;
 import com.getcapacitor.plugin.StatusBar;
+import com.getcapacitor.plugin.Storage;
+import com.getcapacitor.plugin.background.BackgroundTask;
+import com.getcapacitor.ui.Toast;
 
+import org.apache.cordova.CordovaInterfaceImpl;
+import org.apache.cordova.PluginManager;
 import org.json.JSONException;
+import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 
@@ -63,10 +80,15 @@ public class Bridge {
   // The name of the directory we use to look for index.html and the rest of our web assets
   public static final String DEFAULT_WEB_ASSET_DIR = "public";
 
+  // Loaded Capacitor config
+  private JSONObject config = new JSONObject();
+
   // A reference to the main activity for the app
   private final Activity context;
+  private WebViewLocalServer localServer;
   // A reference to the main WebView for the app
   private final WebView webView;
+  private final CordovaInterfaceImpl cordovaInterface;
 
   // Our MessageHandler for sending and receiving data to the WebView
   private final MessageHandler msgHandler;
@@ -76,6 +98,8 @@ public class Bridge {
 
   // Our Handler for posting plugin calls. Created from the ThreadHandler
   private Handler taskHandler = null;
+
+  private final List<Class<? extends Plugin>> initialPlugins;
 
   // A map of Plugin Id's to PluginHandle's
   private Map<String, PluginHandle> plugins = new HashMap<>();
@@ -97,9 +121,11 @@ public class Bridge {
    * @param context
    * @param webView
    */
-  public Bridge(Activity context, WebView webView) {
+  public Bridge(Activity context, WebView webView, List<Class<? extends Plugin>> initialPlugins, CordovaInterfaceImpl cordovaInterface, PluginManager pluginManager) {
     this.context = context;
     this.webView = webView;
+    this.initialPlugins = initialPlugins;
+    this.cordovaInterface = cordovaInterface;
 
     // Start our plugin execution threads and handlers
     handlerThread.start();
@@ -107,34 +133,91 @@ public class Bridge {
 
     // Initialize web view and message handler for it
     this.initWebView();
-    this.msgHandler = new MessageHandler(this, webView);
+    this.msgHandler = new MessageHandler(this, webView, pluginManager);
 
     // Grab any intent info that our app was launched with
     Intent intent = context.getIntent();
     Uri intentData = intent.getData();
     this.intentUri = intentData;
 
-    // Register our core plugins
-    this.registerCorePlugins();
+    Config.load(getActivity());
 
-    Log.d(TAG, "Loading app from " + DEFAULT_WEB_ASSET_DIR + "/index.html");
+    // Register our core plugins
+    this.registerAllPlugins();
+
+    this.loadWebView();
+  }
+
+  private void loadWebView() {
+    final String appUrlConfig = Config.getString("server.url");
+
+    String authority = null;
+    if (appUrlConfig != null) {
+      try {
+        URL appUrlObject = new URL(appUrlConfig);
+        authority = appUrlObject.getAuthority();
+      } catch (Exception ex) {
+      }
+
+      Toast.show(getContext(), "Using app server " + appUrlConfig.toString());
+    }
+
+    final boolean html5mode = Config.getBoolean("server.html5mode", true);
 
     // Start the local web server
-    final WebViewLocalServer localServer = new WebViewLocalServer(context, getJSInjector());
+    localServer = new WebViewLocalServer(context, this, getJSInjector(), authority, html5mode);
     WebViewLocalServer.AssetHostingDetails ahd = localServer.hostAssets(DEFAULT_WEB_ASSET_DIR);
+
+    // Load the index route from our www folder
+    String url = ahd.getHttpsPrefix().buildUpon().build().toString();
+
+    final String appUrl = appUrlConfig == null ? url : appUrlConfig;
+
+    log("Loading app at " + appUrl);
+
     webView.setWebChromeClient(new BridgeWebChromeClient(this));
     webView.setWebViewClient(new WebViewClient() {
       @Override
       public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         return localServer.shouldInterceptRequest(request);
       }
+
+      @Override
+      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+        String url = request.getUrl().toString();
+        return launchIntent(url);
+      }
+
+      @Override
+      public boolean shouldOverrideUrlLoading(WebView view, String url) {
+        return launchIntent(url);
+      }
+
+      private boolean launchIntent(String url) {
+        if (!url.contains(appUrl)) {
+          Intent openIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+          getContext().startActivity(openIntent);
+          return true;
+        }
+        return false;
+      }
     });
 
-    // Load the index.html file from our www folder
-    String url = ahd.getHttpsPrefix().buildUpon().appendPath("index.html").build().toString();
 
     // Get to work
-    webView.loadUrl(url);
+    webView.loadUrl(appUrl);
+  }
+
+  public void handleAppUrlLoadError(Exception ex) {
+    if (ex instanceof SocketTimeoutException) {
+      Toast.show(getContext(), "Unable to load app. Are you sure the server is running at " + localServer.getAuthority() + "?");
+      Log.e(TAG, "Unable to load app. Ensure the server is running at " + localServer.getAuthority() + ", or modify the " +
+          "appUrl setting in capacitor.config.json (make sure to npx cap copy after to commit changes).", ex);
+    }
+  }
+
+  public boolean isDevMode() {
+    return (getActivity().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
   }
 
   /**
@@ -184,10 +267,15 @@ public class Bridge {
   }
   */
 
+  public void reset() {
+    savedCalls = new HashMap<>();
+  }
+
+
   /**
    * Initialize the WebView, setting required flags
    */
-  public void initWebView() {
+  private void initWebView() {
     WebSettings settings = webView.getSettings();
     settings.setJavaScriptEnabled(true);
     settings.setDomStorageEnabled(true);
@@ -199,9 +287,10 @@ public class Bridge {
   /**
    * Register our core Plugin APIs
    */
-  public void registerCorePlugins() {
+  private void registerAllPlugins() {
     this.registerPlugin(App.class);
     this.registerPlugin(Accessibility.class);
+    this.registerPlugin(BackgroundTask.class);
     this.registerPlugin(Browser.class);
     this.registerPlugin(Camera.class);
     this.registerPlugin(Clipboard.class);
@@ -214,17 +303,24 @@ public class Bridge {
     this.registerPlugin(Modals.class);
     this.registerPlugin(Network.class);
     this.registerPlugin(Photos.class);
+    this.registerPlugin(Share.class);
     this.registerPlugin(SplashScreen.class);
     this.registerPlugin(StatusBar.class);
+    this.registerPlugin(Storage.class);
+    this.registerPlugin(com.getcapacitor.plugin.Toast.class);
+
+    for (Class<? extends Plugin> pluginClass : this.initialPlugins) {
+      this.registerPlugin(pluginClass);
+    }
   }
 
   /**
    * Register additional plugins
-   * @param plugins the plugins to register
+   * @param pluginClasses the plugins to register
    */
-  public void registerPlugins(Plugin[] plugins) {
-    for (Plugin plugin : plugins) {
-      this.registerPlugin(plugin.getClass());
+  public void registerPlugins(Class<? extends Plugin>[] pluginClasses) {
+    for (Class<? extends Plugin> plugin : pluginClasses) {
+      this.registerPlugin(plugin);
     }
   }
 
@@ -241,6 +337,12 @@ public class Bridge {
     }
 
     String pluginId = pluginClass.getSimpleName();
+
+    // Use the supplied name as the id if available
+    if (!pluginAnnotation.name().equals("")) {
+      pluginId = pluginAnnotation.name();
+    }
+
     Log.d(Bridge.TAG, "Registering plugin: " + pluginId);
 
     try {
@@ -312,8 +414,8 @@ public class Bridge {
           try {
             plugin.invoke(methodName, call);
 
-            if (call.isRetained()) {
-              retainCall(call);
+            if (call.isSaved()) {
+              saveCall(call);
             }
           } catch(PluginLoadException | InvalidPluginMethodException | PluginInvocationException ex) {
             Log.e(Bridge.TAG, "Unable to execute plugin method", ex);
@@ -331,15 +433,66 @@ public class Bridge {
     }
   }
 
+  public void error(String... args) {
+    Log.e(TAG, "⚡️ " + TextUtils.join(" ", args));
+  }
+
+  public void fatalError(String... args) {
+    Log.e(TAG, "⚡️ FATAL ERROR ⚡️");
+    error(args);
+  }
+
+  public void log(String... args) {
+    Log.d(TAG, TextUtils.join(" ", args));
+  }
+
+  /**
+   * Evaluate JavaScript in the web view. This method
+   * executes on the main thread automatically.
+   * @param js the JS to execute
+   * @param callback an optional ValueCallback that will synchronously recieve a value
+   *                 after calling the JS
+   */
+  public void eval(final String js, final ValueCallback<String> callback) {
+    Handler mainHandler = new Handler(context.getMainLooper());
+    mainHandler.post(new Runnable() {
+      @Override
+      public void run() {
+        webView.evaluateJavascript(js, callback);
+      }
+    });
+  }
+
+  public void logToJs(final String message, final String level) {
+    eval("window.Capacitor.logJs(\"" + message + "\", \"" + level + "\")", null);
+  }
+
+  public void logToJs(final String message) {
+    logToJs(message, "log");
+  }
+
+  public void triggerJSEvent(final String eventName, final String target) {
+    eval("window.Capacitor.triggerEvent(\"" + eventName + "\", \"" + target + "\")", new ValueCallback<String>() {
+      @Override
+      public void onReceiveValue(String s) {
+      }
+    });
+  }
+
   public void execute(Runnable runnable) {
     taskHandler.post(runnable);
   }
 
+  public void executeOnMainThread(Runnable runnable) {
+    Handler mainHandler = new Handler(context.getMainLooper());
+
+    mainHandler.post(runnable);
+  }
   /**
    * Retain a call between plugin invocations
    * @param call
    */
-  public void retainCall(PluginCall call) {
+  public void saveCall(PluginCall call) {
     this.savedCalls.put(call.getCallbackId(), call);
   }
 
@@ -349,7 +502,7 @@ public class Bridge {
    * @param callbackId the callbackId to use to lookup the call with
    * @return the stored call
    */
-  public PluginCall getRetainedCall(String callbackId) {
+  public PluginCall getSavedCall(String callbackId) {
     return this.savedCalls.get(callbackId);
   }
 
@@ -367,10 +520,14 @@ public class Bridge {
    */
   private JSInjector getJSInjector() {
     try {
+      String globalJS = JSExport.getGlobalJS(context, isDevMode());
       String coreJS = JSExport.getCoreJS(context);
       String pluginJS = JSExport.getPluginJS(plugins.values());
+      String cordovaJS = JSExport.getCordovaJS(context);
+      String cordovaPluginsJS = JSExport.getCordovaPluginJS(context);
+      String cordovaPluginsFileJS = JSExport.getCordovaPluginsFileJS(context);
 
-      return new JSInjector(coreJS, pluginJS);
+      return new JSInjector(globalJS, coreJS, pluginJS, cordovaJS, cordovaPluginsJS, cordovaPluginsFileJS);
     } catch(JSExportException ex) {
       Log.e(TAG, "Unable to export Capacitor JS. App will not function!", ex);
     }
@@ -454,7 +611,12 @@ public class Bridge {
     PluginHandle plugin = getPluginWithRequestCode(requestCode);
 
     if (plugin == null) {
-      Log.d(Bridge.TAG, "Unable to find a plugin to handle requestCode " + requestCode);
+      Log.d(Bridge.TAG, "Unable to find a Capacitor plugin to handle requestCode, try with Cordova plugins " + requestCode);
+      try {
+        cordovaInterface.onRequestPermissionResult(requestCode, permissions, grantResults);
+      } catch (JSONException e) {
+        Log.d(Bridge.TAG, "Error on Cordova plugin permissions request " + e.getMessage());
+      }
       return;
     }
 
@@ -472,7 +634,8 @@ public class Bridge {
     PluginHandle plugin = getPluginWithRequestCode(requestCode);
 
     if (plugin == null || plugin.getInstance() == null) {
-      Log.d(Bridge.TAG, "Unable to find a plugin to handle requestCode " + requestCode);
+      Log.d(Bridge.TAG, "Unable to find a Capacitor plugin to handle requestCode, trying Cordova plugins " + requestCode);
+      cordovaInterface.onActivityResult(requestCode, resultCode, data);
       return;
     }
 
@@ -533,6 +696,8 @@ public class Bridge {
    * Handle onPause lifecycle event and notify the plugins
    */
   public void onPause() {
+    Splash.onPause();
+
     for (PluginHandle plugin : plugins.values()) {
       plugin.getInstance().handleOnPause();
     }
@@ -545,5 +710,23 @@ public class Bridge {
     for (PluginHandle plugin : plugins.values()) {
       plugin.getInstance().handleOnStop();
     }
+  }
+
+  public void onBackPressed() {
+    PluginHandle appHandle = getPlugin("App");
+    if (appHandle != null) {
+      App appPlugin = (App) appHandle.getInstance();
+
+      // If there are listeners, don't do the default action, as this means the user
+      // wants to override the back button
+      if (appPlugin.hasBackButtonListeners()) {
+        appPlugin.fireBackButton();
+      } else {
+        if (webView.canGoBack()) {
+          webView.goBack();
+        }
+      }
+    }
+
   }
 }

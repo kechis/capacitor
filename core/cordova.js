@@ -19,7 +19,7 @@
  under the License.
 */
 ; (function () {
-    var PLATFORM_VERSION_BUILD_LABEL = '4.5.4';
+    var PLATFORM_VERSION_BUILD_LABEL = '1.0.0';
     // file: src/scripts/require.js
 
     /* jshint -W079 */
@@ -98,12 +98,6 @@
 
     // file: src/cordova.js
     define("cordova", function (require, exports, module) {
-
-        // Workaround for Windows 10 in hosted environment case
-        // http://www.w3.org/html/wg/drafts/html/master/browsers.html#named-access-on-the-window-object
-        if (window.cordova && !(window.cordova instanceof HTMLElement)) { // eslint-disable-line no-undef
-            throw new Error('cordova already defined');
-        }
 
         var channel = require('cordova/channel');
         var platform = require('cordova/platform');
@@ -838,7 +832,6 @@
 
     });
 
-    // file: /Users/spindori/Documents/Cordova/cordova-ios/cordova-js-src/exec.js
     define("cordova/exec", function (require, exports, module) {
 
         /*global require, module, atob, document */
@@ -904,8 +897,7 @@
             return args;
         }
 
-        var iOSExec = function () {
-            console.log('ios exec');
+        var capacitorExec = function () {
             // detect change in bridge, if there is a change, we forward to new bridge
 
             var successCallback, failCallback, service, action, actionArgs;
@@ -947,7 +939,11 @@
                 action,
                 actionArgs
             };
-            window.webkit.messageHandlers.bridge.postMessage(command);
+            if (window.androidBridge) {
+                window.androidBridge.postMessage(JSON.stringify(command));
+            } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bridge) {
+                window.webkit.messageHandlers.bridge.postMessage(command);
+            }
 
         };
 
@@ -956,7 +952,7 @@
             var cexec = cordovaExec();
 
             return (execProxy !== cexec && // proxy objects are different
-                iOSExec !== cexec      // proxy object is not the current iOSExec
+                capacitorExec !== cexec      // proxy object is not the current capacitorExec
             );
         }
 
@@ -1015,7 +1011,7 @@
             }, 50); // Making this > 0 improves performance (marginally) in the normal case (where it doesn't fire).
         }
 
-        iOSExec.nativeFetchMessages = function () {
+        capacitorExec.nativeFetchMessages = function () {
             // Stop listing for window detatch once native side confirms poke.
             if (failSafeTimerId) {
                 clearTimeout(failSafeTimerId);
@@ -1030,7 +1026,7 @@
             return json;
         };
 
-        iOSExec.nativeCallback = function (callbackId, status, message, keepCallback, debug) {
+        capacitorExec.nativeCallback = function (callbackId, status, message, keepCallback, debug) {
             var success = status === 0 || status === 1;
             var args = convertMessageToArgsNativeToJs(message);
             setTimeout(function () {
@@ -1039,7 +1035,7 @@
         };
 
         // for backwards compatibility
-        iOSExec.nativeEvalAndFetch = function (func) {
+        capacitorExec.nativeEvalAndFetch = function (func) {
             try {
                 func();
             } catch (e) {
@@ -1051,7 +1047,7 @@
         function cordovaExec() {
             var cexec = require('cordova/exec');
             var cexec_valid = (typeof cexec.nativeFetchMessages === 'function') && (typeof cexec.nativeEvalAndFetch === 'function') && (typeof cexec.nativeCallback === 'function');
-            return (cexec_valid && execProxy !== cexec) ? cexec : iOSExec;
+            return (cexec_valid && execProxy !== cexec) ? cexec : capacitorExec;
         }
         function execProxy() {
             cordovaExec().apply(null, arguments);
@@ -1320,14 +1316,10 @@
 
     });
 
-    // file: /Users/spindori/Documents/Cordova/cordova-ios/cordova-js-src/platform.js
     define("cordova/platform", function (require, exports, module) {
-
         module.exports = {
-            id: 'ios',
+            id: Capacitor.platform,
             bootstrap: function () {
-                // Attach the console polyfill that is iOS-only to window.console
-
                 require('cordova/channel').onNativeReady.fire();
             }
         };

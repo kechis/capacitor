@@ -1,8 +1,6 @@
 import { Component, ViewChild } from '@angular/core';
 import { Platform, NavController, Nav } from 'ionic-angular';
 
-import { HomePage } from '../pages/home/home';
-
 import { Plugins } from '@capacitor/core';
 
 @Component({
@@ -16,6 +14,7 @@ export class MyApp {
   PLUGINS = [
     { name: 'App', page: 'AppPage' },
     { name: 'Accessibility', page: 'AccessibilityPage' },
+    { name: 'Background', page: 'BackgroundPage' },
     { name: 'Browser', page: 'BrowserPage' },
     { name: 'Camera', page: 'CameraPage' },
     { name: 'Clipboard', page: 'ClipboardPage' },
@@ -27,28 +26,33 @@ export class MyApp {
     { name: 'LocalNotifications', page: 'LocalNotificationsPage' },
     { name: 'Modals', page: 'ModalsPage' },
     { name: 'Motion', page: 'MotionPage' },
+    { name: 'Nav', page: 'NavPage' },
     { name: 'Network', page: 'NetworkPage' },
     { name: 'Photos', page: 'PhotosPage' },
+    { name: 'Share', page: 'SharePage' },
     { name: 'SplashScreen', page: 'SplashScreenPage' },
-    { name: 'StatusBar', page: 'StatusBarPage' }
+    { name: 'Storage', page: 'StoragePage' },
+    { name: 'StatusBar', page: 'StatusBarPage' },
+    { name: 'Toast', page: 'ToastPage' }
   ]
 
   constructor(platform: Platform) {
+    Plugins.SplashScreen.hide();
     /*
     Plugins.App.addListener('pluginError', (err: any, info: any) => {
       console.error('There was a serious error with a plugin', err, info);
     });
     */
 
-    Plugins.App.addListener('appStateChange', (err: any, state: any) => {
+    Plugins.App.addListener('appStateChange', (state: any) => {
       console.log('App state changed', state);
     });
 
-    Plugins.App.addListener('appUrlOpen', (err: any, data: any) => {
+    Plugins.App.addListener('appUrlOpen', (data: any) => {
       alert('APP URL OPEN: ' +  data.url);
     });
 
-    Plugins.App.addListener('appRestoredResult', (err: any, data: any) => {
+    Plugins.App.addListener('appRestoredResult', (data: any) => {
       alert('Got restored result');
       console.log('Restored result:', data);
     });

@@ -22,8 +22,14 @@ import android.util.Log;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.SequenceInputStream;
+import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.net.URLConnection;
 import java.util.Map;
 import java.util.UUID;
@@ -39,37 +45,29 @@ import java.util.UUID;
  * {@link android.webkit.WebViewClient#shouldInterceptRequest(android.webkit.WebView,
  * android.webkit.WebResourceRequest)}
  * methods.
- * <pre>
- *     WebViewLocalServer localServer = new WebViewLocalServer(this);
- *     // For security WebViewLocalServer uses a unique subdomain by default.
- *     AssetHostingDetails ahd = localServer.hostAssets("/www");
- *     webView.setWebViewClient(new WebViewClient() {
- *         @Override
- *         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
- *             return localServer.shouldInterceptRequest(request);
- *         }
- *     });
- *     // If your application's assets are in the "main/assets" folder this will read the file
- *     // from "main/assets/www/index.html" and load it as if it were hosted on:
- *     // https://{uuid}.androidplatform.net/assets/index.html
- *     webview.loadUrl(ahd.getHttpsPrefix().buildUpon().appendPath("index.html").build().toString());
- *
- * </pre>
  */
 public class WebViewLocalServer {
   private static String TAG = "WebViewAssetServer";
+
   /**
-   * The androidplatform.net domain currently belongs to Google and has been reserved for the
-   * purpose of Android applications intercepting navigations/requests directed there.
+   * capacitorapp.net is reserved by the Ionic team for use in local capacitor apps.
    */
-  public final static String knownUnusedAuthority = "ionicapps.com";
+  public final static String knownUnusedAuthority = "capacitorapp.net";
   private final static String httpScheme = "http";
   private final static String httpsScheme = "https";
 
   private final UriMatcher uriMatcher;
   private final AndroidProtocolHandler protocolHandler;
   private final String authority;
+  // Whether we're serving local files or proxying (for example, when doing livereload on a
+  // non-local endpoint (will be false in that case)
+  private final boolean isLocal;
+  // Whether to route all requests to paths without extensions back to `index.html`
+  private final boolean html5mode;
   private final JSInjector jsInjector;
+  private final Bridge bridge;
+
+  public String getAuthority() { return authority; }
 
   /**
    * A handler that produces responses for paths on the virtual asset server.
@@ -86,7 +84,7 @@ public class WebViewLocalServer {
    * minimum.
    */
   public abstract static class PathHandler {
-    private String mimeType;
+    protected String mimeType;
     private String encoding;
     private String charset;
     private int statusCode;
@@ -94,12 +92,11 @@ public class WebViewLocalServer {
     private Map<String, String> responseHeaders;
 
     public PathHandler() {
-      this(null, null, null, 200, "OK", null);
+      this(null, null, 200, "OK", null);
     }
 
-    public PathHandler(String mimeType, String encoding, String charset, int statusCode,
+    public PathHandler(String encoding, String charset, int statusCode,
                        String reasonPhrase, Map<String, String> responseHeaders) {
-      this.mimeType = mimeType;
       this.encoding = encoding;
       this.charset = charset;
       this.statusCode = statusCode;
@@ -112,10 +109,6 @@ public class WebViewLocalServer {
     }
 
     abstract public InputStream handle(Uri url);
-
-    public String getMimeType() {
-      return mimeType;
-    }
 
     public String getEncoding() {
       return encoding;
@@ -169,25 +162,20 @@ public class WebViewLocalServer {
     }
   }
 
-  /*package*/ WebViewLocalServer(Context context, JSInjector jsInjector) {
+  WebViewLocalServer(Context context, Bridge bridge, JSInjector jsInjector, String authority, boolean html5mode) {
     uriMatcher = new UriMatcher(null);
+    this.html5mode = html5mode;
     this.protocolHandler = new AndroidProtocolHandler(context.getApplicationContext());
-    authority = UUID.randomUUID().toString() + "" + knownUnusedAuthority;
+    if (authority != null) {
+      this.authority = authority;
+      this.isLocal = false;
+    } else {
+      this.isLocal = true;
+      this.authority = UUID.randomUUID().toString() + "" + knownUnusedAuthority;
+    }
+    this.bridge = bridge;
     this.jsInjector = jsInjector;
   }
-
-  /**
-   * Creates a new instance of the WebView local server.
-   *
-   * @param context context used to resolve resources/assets/
-   */
-  /*
-  public WebViewLocalServer(Context context) {
-    // We only need the context to resolve assets and resources so the ApplicationContext is
-    // sufficient while holding on to an Activity context could cause leaks.
-    this(new AndroidProtocolHandler(context.getApplicationContext()));
-  }
-  */
 
   private static Uri parseAndVerifyUrl(String url) {
     if (url == null) {
@@ -224,7 +212,38 @@ public class WebViewLocalServer {
       return null;
     }
 
+    if (this.isLocal) {
+      Log.d("SERVER", "Handling local request: " + request.getUrl().toString());
+      return handleLocalRequest(request, handler);
+    } else {
+      return handleProxyRequest(request, handler);
+    }
+  }
+
+  private WebResourceResponse handleLocalRequest(WebResourceRequest request, PathHandler handler) {
     String path = request.getUrl().getPath();
+
+    if (path.equals("/cordova.js")) {
+      return new WebResourceResponse("application/javascript", handler.getEncoding(),
+          handler.getStatusCode(), handler.getReasonPhrase(), handler.getResponseHeaders(), null);
+    }
+
+    if (path.equals("/") || (!request.getUrl().getLastPathSegment().contains(".") && html5mode)) {
+      InputStream stream;
+      try {
+        stream = protocolHandler.openAsset("public/index.html", "");
+      } catch (IOException e) {
+        Log.e(TAG, "Unable to open index.html", e);
+        return null;
+      }
+
+      stream = jsInjector.getInjectedStream(stream);
+      bridge.reset();
+
+      return new WebResourceResponse("text/html", handler.getEncoding(),
+          handler.getStatusCode(), handler.getReasonPhrase(), handler.getResponseHeaders(), stream);
+    }
+
     int periodIndex = path.lastIndexOf(".");
     if (periodIndex >= 0) {
       String ext = path.substring(path.lastIndexOf("."), path.length());
@@ -235,9 +254,12 @@ public class WebViewLocalServer {
       // TODO: Conjure up a bit more subtlety than this
       if (ext.equals(".html")) {
         stream = jsInjector.getInjectedStream(responseStream);
+        bridge.reset();
       }
 
-      return new WebResourceResponse(handler.getMimeType(), handler.getEncoding(),
+      String mimeType = getMimeType(path, stream);
+
+      return new WebResourceResponse(mimeType, handler.getEncoding(),
           handler.getStatusCode(), handler.getReasonPhrase(), handler.getResponseHeaders(), stream);
     }
 
@@ -245,32 +267,78 @@ public class WebViewLocalServer {
   }
 
   /**
-   * Attempt to retrieve the WebResourceResponse associated with the given <code>url</code>.
-   * This method should be invoked from within
-   * {@link android.webkit.WebViewClient#shouldInterceptRequest(android.webkit.WebView, String)}.
-   *
-   * @param url the url to process.
-   * @return a response if the request URL had a matching handler, null if no handler was found.
+   * Instead of reading files from the filesystem/assets, proxy through to the URL
+   * and let an external server handle it.
+   * @param request
+   * @param handler
+   * @return
    */
-  public WebResourceResponse shouldInterceptRequest(String url) {
-    PathHandler handler = null;
-    Uri uri = parseAndVerifyUrl(url);
-    if (uri != null) {
-      synchronized (uriMatcher) {
-        handler = (PathHandler) uriMatcher.match(uri);
-      }
-    }
-    if (handler == null)
-      return null;
+  private WebResourceResponse handleProxyRequest(WebResourceRequest request, PathHandler handler) {
+    try {
+      String path = request.getUrl().getPath();
+      URL url = new URL(request.getUrl().toString());
+      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestMethod("GET");
+      conn.setReadTimeout(30 * 1000);
+      conn.setConnectTimeout(30 * 1000);
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-      return new WebResourceResponse(handler.getMimeType(), handler.getEncoding(),
-          new LegacyLazyInputStream(handler, uri));
-    } else {
-      InputStream is = handler.handle(uri);
-      return new WebResourceResponse(handler.getMimeType(), handler.getEncoding(),
-          is);
+      InputStream stream = conn.getInputStream();
+
+      if (path.equals("/") || (!request.getUrl().getLastPathSegment().contains(".") && html5mode)) {
+        stream = jsInjector.getInjectedStream(stream);
+
+        bridge.reset();
+
+        return new WebResourceResponse("text/html", handler.getEncoding(),
+            handler.getStatusCode(), handler.getReasonPhrase(), handler.getResponseHeaders(), stream);
+      }
+
+      int periodIndex = path.lastIndexOf(".");
+      if (periodIndex >= 0) {
+        String ext = path.substring(path.lastIndexOf("."), path.length());
+
+        // TODO: Conjure up a bit more subtlety than this
+        if (ext.equals(".html")) {
+          stream = jsInjector.getInjectedStream(stream);
+          bridge.reset();
+        }
+
+        String mimeType = getMimeType(path, stream);
+
+        return new WebResourceResponse(mimeType, handler.getEncoding(),
+            handler.getStatusCode(), handler.getReasonPhrase(), handler.getResponseHeaders(), stream);
+      }
+
+      return new WebResourceResponse("", handler.getEncoding(),
+          handler.getStatusCode(), handler.getReasonPhrase(), handler.getResponseHeaders(), conn.getInputStream());
+
+    } catch (SocketTimeoutException ex) {
+      bridge.handleAppUrlLoadError(ex);
+    } catch (Exception ex) {
+      bridge.handleAppUrlLoadError(ex);
     }
+    return null;
+  }
+
+  private String getMimeType(String path, InputStream stream) {
+    String mimeType = null;
+    try {
+      mimeType = URLConnection.guessContentTypeFromName(path); // Does not recognize *.js
+      if (mimeType != null && path.endsWith(".js") && mimeType.equals("image/x-icon")) {
+        Log.d(Bridge.TAG, "We shouldn't be here");
+      }
+      if (mimeType == null) {
+        if (path.endsWith(".js")) {
+          // Make sure JS files get the proper mimetype to support ES modules
+          mimeType = "application/javascript";
+        } else {
+          mimeType = URLConnection.guessContentTypeFromStream(stream);
+        }
+      }
+    } catch (Exception ex) {
+      Log.e(TAG, "Unable to get mime type" + path, ex);
+    }
+    return mimeType;
   }
 
   /**
@@ -361,19 +429,10 @@ public class WebViewLocalServer {
         InputStream stream;
         String path = url.getPath().replaceFirst(virtualAssetPath, assetPath);
         try {
-          stream = protocolHandler.openAsset(path);
+          stream = protocolHandler.openAsset(path, assetPath);
         } catch (IOException e) {
           Log.e(TAG, "Unable to open asset URL: " + url);
           return null;
-        }
-
-        String mimeType = null;
-        try {
-          mimeType = URLConnection.guessContentTypeFromName(path);
-          if (mimeType == null)
-            mimeType = URLConnection.guessContentTypeFromStream(stream);
-        } catch (Exception ex) {
-          Log.e(TAG, "Unable to get mime type" + url);
         }
 
         return stream;
@@ -382,11 +441,13 @@ public class WebViewLocalServer {
 
     if (enableHttp) {
       httpPrefix = uriBuilder.build();
+      register(Uri.withAppendedPath(httpPrefix, "/"), handler);
       register(Uri.withAppendedPath(httpPrefix, "**"), handler);
     }
     if (enableHttps) {
       uriBuilder.scheme(httpsScheme);
       httpsPrefix = uriBuilder.build();
+      register(Uri.withAppendedPath(httpsPrefix, "/"), handler);
       register(Uri.withAppendedPath(httpsPrefix, "**"), handler);
     }
     return new AssetHostingDetails(httpPrefix, httpsPrefix);
@@ -522,22 +583,6 @@ public class WebViewLocalServer {
     public long skip(long n) throws IOException {
       InputStream is = getInputStream();
       return (is != null) ? is.skip(n) : 0;
-    }
-  }
-
-  // For earlier than L.
-  private static class LegacyLazyInputStream extends LazyInputStream {
-    private Uri uri;
-    private InputStream is;
-
-    public LegacyLazyInputStream(PathHandler handler, Uri uri) {
-      super(handler);
-      this.uri = uri;
-    }
-
-    @Override
-    protected InputStream handle() {
-      return handler.handle(uri);
     }
   }
 

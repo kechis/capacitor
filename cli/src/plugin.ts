@@ -1,10 +1,12 @@
+import { Config } from './config';
 import { join, resolve } from 'path';
-import { logInfo, readJSON } from './common';
+import { log, logInfo, readJSON, readXML } from './common';
 
 
 export const enum PluginType {
-  Code,
+  Core,
   Cocoapods,
+  Cordova,
 }
 export interface PluginManifest {
   ios: {
@@ -19,44 +21,62 @@ export interface PluginManifest {
 export interface Plugin {
   id: string;
   name: string;
+  version: string;
   rootPath: string;
-  manifest: PluginManifest;
+  manifest?: PluginManifest;
+  repository?: any;
+  xml?: any;
   ios?: {
     name: string;
     type: PluginType;
     path: string;
   };
   android?: {
+    type: PluginType;
     path: string
   };
 }
 
-export async function getPlugins(): Promise<Plugin[]> {
-  const deps = await getDependencies();
-  const plugins = await Promise.all(deps.map(resolvePlugin));
+export async function getPlugins(config: Config): Promise<Plugin[]> {
+  const deps = await getDependencies(config);
+  const plugins = await Promise.all(deps.map(async p => resolvePlugin(config, p)));
   return plugins.filter(p => !!p) as Plugin[];
 }
 
-export async function resolvePlugin(name: string): Promise<Plugin | null> {
+export async function resolvePlugin(config: Config, name: string): Promise<Plugin | null> {
   try {
-    const rootPath = resolve('node_modules', name);
+    const rootPath = resolve(config.app.rootDir, 'node_modules', name);
     const packagePath = join(rootPath, 'package.json');
     const meta = await readJSON(packagePath);
-    if (!meta || !meta.capacitor) {
+    if (!meta) {
       return null;
     }
+    if (meta.capacitor) {
+      return {
+        id: name,
+        name: fixName(name),
+        version: meta.version,
+        rootPath: rootPath,
+        repository: meta.repository,
+        manifest: meta.capacitor
+      };
+    }
+    const pluginXMLPath = join(rootPath, 'plugin.xml');
+    const xmlMeta = await readXML(pluginXMLPath);
     return {
       id: name,
       name: fixName(name),
+      version: meta.version,
       rootPath: rootPath,
-      manifest: meta.capacitor
+      repository: meta.repository,
+      xml: xmlMeta.plugin
     };
   } catch (e) { }
   return null;
 }
 
-export async function getDependencies(): Promise<string[]> {
-  const json = await readJSON('package.json');
+export async function getDependencies(config: Config): Promise<string[]> {
+  const json = await readJSON(resolve(config.app.rootDir, 'package.json'));
   const { dependencies } = json;
   if (!dependencies) {
     return [];
@@ -75,22 +95,68 @@ export function fixName(name: string): string {
 }
 
 
-const CORE_PLUGINS = [
-  'Camera', 'Network', 'Browser', 'Clipboard', 'Console', 'Device', 'Filesystem',
-  'Geolocation', 'Haptics', 'LocalNotifications', 'Modals', 'Motion', 'PushNotifications',
-  'Share', 'SplashScreen', 'StatusBar', 'Storage', 'Toast'
-].sort();
+export function printPlugins(plugins: Plugin[], platform: string, type: string = 'capacitor') {
+  const plural = plugins.length === 1 ? '' : 's';
 
-export function printPlugins(plugins: Plugin[]) {
-  const chalk = require('chalk');
-  const pluginNames = plugins.map(p => p.id).sort();
-  const builtinPlugins = CORE_PLUGINS.map(p => `${chalk.dim('[core]')} ${p}`);
-  pluginNames.push(...builtinPlugins);
-  if (pluginNames.length > 0) {
-    logInfo(`found ${pluginNames.length} native modules
-${pluginNames.map(p => `     ${p}`).join('\n')}
-`);
+  if (type === 'cordova') {
+    log(`  Found ${plugins.length} Cordova plugin${plural} for ${platform}:`);
   } else {
-    logInfo('no capacitor plugin was found, that\'s ok, you can add more plugins later');
+    log(`  Found ${plugins.length} Capacitor plugin${plural} for ${platform}:`);
   }
+  const chalk = require('chalk');
+  for (let p of plugins) {
+    log(`    ${chalk.bold(`${p.name}`)} (${chalk.green(p.version)})`);
+  }
+}
+
+export function getPluginPlatform(p: Plugin, platform: string) {
+  const platforms = p.xml.platform;
+  if (platforms) {
+    const platforms = p.xml.platform.filter(function(item: any) { return item.$.name === platform; });
+    return platforms[0];
+  }
+  return null;
+}
+
+export function getPlatformElement(p: Plugin, platform: string, elementName: string) {
+  const platformTag = getPluginPlatform(p, platform);
+  if (platformTag) {
+    const element = platformTag[elementName];
+    if (element) {
+      return element;
+    }
+  }
+  return [];
+}
+
+export function getPluginType(p: Plugin, platform: string): PluginType {
+  if (platform === 'ios') {
+    return p.ios!.type;
+  }
+  if (platform === 'android') {
+    return p.android!.type;
+  }
+  return PluginType.Core;
+}
+
+/**
+ * Get each JavaScript Module for the give nplugin
+ */
+export function getJSModules(p: Plugin, platform: string) {
+  let modules: Array<string> = [];
+  if (p.xml['js-module']) {
+    modules = modules.concat(p.xml['js-module']);
+  }
+  const platformModules = getPluginPlatform(p, platform);
+  if (platformModules && platformModules['js-module']) {
+    modules = modules.concat(platformModules['js-module']);
+  }
+  return modules;
+}
+
+export function getFilePath(config: Config, plugin: Plugin, path: string) {
+  if (path.startsWith("node_modules")) {
+    return join(config.app.rootDir, path);
+  }
+  return join(plugin.rootPath, path);
 }

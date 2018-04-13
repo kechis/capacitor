@@ -1,11 +1,12 @@
 {
   "name": "@capacitor/cli",
-  "version": "0.0.10",
+  "version": "1.0.0-alpha.34",
   "description": "Capacitor: Cross-platform apps with JavaScript and the web",
-  "homepage": "https://ionic-team.github.io/capacitor/",
+  "homepage": "https://capacitor.ionicframework.com/",
   "author": "Ionic Team <hi@ionicframework.com> (https://ionicframework.com) ",
   "bin": {
-    "capacitor": "./bin/capacitor"
+    "capacitor": "./bin/capacitor",
+    "cap": "./bin/capacitor"
   },
   "engines": {
     "node": ">=8.3.0"
@@ -43,6 +44,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@stencil/dev-server": "0.0.18-1",
     "@types/tar": "^4.0.0",
     "chalk": "^2.3.0",
     "commander": "^2.12.2",
@@ -61,7 +63,7 @@
   "devDependencies": {
     "@types/fs-extra": "^4.0.5",
     "@types/inquirer": "0.0.35",
-    "@types/jest": "^21.1.8",
+    "@types/jest": "^21.1.10",
     "@types/mock-fs": "^3.6.30",
     "@types/opn": "^5.1.0",
     "@types/ora": "^1.3.1",
@@ -71,6 +73,7 @@
     "jest": "^21.2.1",
     "mock-fs": "^4.4.2",
     "np": "^2.18.2",
+    "tmp": "0.0.33",
     "ts-jest": "^21.2.4",
     "tslint": "^5.8.0",
     "tslint-ionic-rules": "0.0.11",
@@ -88,6 +91,10 @@
     "transform": {
       "^.+\\.(ts)$": "ts-jest"
     },
-    "testRegex": "/src/.*\\.spec\\.(ts|tsx|js)$"
+    "testRegex": "(/test/.*|(\\.|/)(test|spec))\\.(jsx?|tsx?)$",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/test/util.ts"
+    ]
   }
 }

@@ -1,6 +1,6 @@
 $link-color: #5EB6FC;
 
-plugin-api{
+plugin-api {
   .avc-code-plugin-index {
     anchor-link {
       color: $link-color;
@@ -54,13 +54,17 @@ plugin-api{
 
   avc-code-type {
     display: inline-block;
-    color: #4b904b;
+    color: $link-color;
+    font-weight: 500;
   }
 
   .avc-code-string {
-    color: #4b904b;
+    color: $link-color;
   }
   
+  .avc-code-interface {
+    margin-top: 25px;
+  }
 
   .avc-code-interface-param {
     margin-left: 25px;

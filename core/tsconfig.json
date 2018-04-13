@@ -3,6 +3,9 @@
     "allowSyntheticDefaultImports": true,
     "declaration": true,
     "experimentalDecorators": true,
+    "noEmitHelpers": true,
+    "importHelpers": true,
+    "moduleResolution": "node",
     "lib": [
       "dom",
       "es2015"
@@ -13,7 +16,7 @@
     "noUnusedParameters": true,
     "outDir": "dist",
     "sourceMap": true,
-    "target": "es5"
+    "target": "es2015"
   },
   "files": [
     "src/index.ts"

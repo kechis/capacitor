@@ -4,40 +4,34 @@ import com.getcapacitor.NativePlugin;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.Splash;
 
 @NativePlugin()
 public class SplashScreen extends Plugin {
-  private static final int DEFAULT_FADE_IN_DURATION = 200;
-  private static final int DEFAULT_FADE_OUT_DURATION = 200;
-  private static final int DEFAULT_SHOW_DURATION = 3000;
-  private static final boolean DEFAULT_AUTO_HIDE = true;
-
-  @Override
-  public void load() {
-    buildViews();
-  }
-
   @PluginMethod()
-  public void show(PluginCall call) {
+  public void show(final PluginCall call) {
+    int showDuration = call.getInt("showDuration", Splash.DEFAULT_SHOW_DURATION);
+    int fadeInDuration = call.getInt("fadeInDuration", Splash.DEFAULT_FADE_IN_DURATION);
+    int fadeOutDuration = call.getInt("fadeOutDuration", Splash.DEFAULT_FADE_OUT_DURATION);
+    boolean autoHide = call.getBoolean("autoHide", Splash.DEFAULT_AUTO_HIDE);
 
+    Splash.show(getActivity(), showDuration, fadeInDuration, fadeOutDuration, autoHide, new Splash.SplashListener() {
+      @Override
+      public void completed() {
+        call.success();
+      }
+
+      @Override
+      public void error() {
+        call.error("An error occurred while showing splash");
+      }
+    });
   }
 
   @PluginMethod()
   public void hide(PluginCall call) {
-
-  }
-
-  private void buildViews() {
-
-  }
-
-  @Override
-  public void handleOnPause() {
-    super.handleOnPause();
-  }
-
-  @Override
-  protected void handleOnResume() {
-    super.handleOnResume();
+    int fadeDuration = call.getInt("fadeOutDuration", Splash.DEFAULT_FADE_OUT_DURATION);
+    Splash.hide(getContext(), fadeDuration);
+    call.success();
   }
 }

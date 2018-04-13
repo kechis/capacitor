@@ -2,24 +2,37 @@ import Foundation
 
 /**
  * StatusBar plugin. Requires "View controller-based status bar appearance" to
- * be "NO" in Info.plist
+ * be "YES" in Info.plist
  */
-@objc(StatusBar)
-public class StatusBar: CAPPlugin {
-  @objc public func setStyle(_ call: CAPPluginCall) {
+@objc(CAPStatusBarPlugin)
+public class CAPStatusBarPlugin: CAPPlugin {
+  @objc func setStyle(_ call: CAPPluginCall) {
     let options = call.options!
 
     if let style = options["style"] as? String {
-      DispatchQueue.main.async {
-        if style == "DARK" {
-          UIApplication.shared.statusBarStyle = .lightContent
-        } else if style == "LIGHT" {
-          UIApplication.shared.statusBarStyle = .default
-        }
+      if style == "DARK" {
+        bridge.setStatusBarStyle(.lightContent)
+      } else if style == "LIGHT" {
+        bridge.setStatusBarStyle(.default)
       }
     }
     
     call.success([:])
+  }
+  
+  @objc func setBackgroundColor(_ call: CAPPluginCall) {
+    // noop on iOS
+    call.success()
+  }
+  
+  @objc func hide(_ call: CAPPluginCall) {
+    bridge.setStatusBarVisible(false)
+    call.success()
+  }
+  
+  @objc func show(_ call: CAPPluginCall) {
+    bridge.setStatusBarVisible(true)
+    call.success()
   }
 }
 

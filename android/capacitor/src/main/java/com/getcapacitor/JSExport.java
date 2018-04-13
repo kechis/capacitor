@@ -2,6 +2,7 @@ package com.getcapacitor;
 
 import android.content.Context;
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,10 +15,21 @@ public class JSExport {
   private static String CATCHALL_OPTIONS_PARAM = "_options";
   private static String CALLBACK_PARAM = "_callback";
 
+  public static String getGlobalJS(Context context, boolean isDebug) {
+    return "window.Capacitor = { DEBUG: " + isDebug + " };";
+  }
+
   public static String getCoreJS(Context context) throws JSExportException {
     try {
-      BufferedReader br = new BufferedReader(
-          new InputStreamReader(context.getAssets().open("public/native-bridge.js")));
+      return getJS(context, "public/native-bridge.js");
+    } catch(IOException ex) {
+      throw new JSExportException("Unable to load native-bridge.js. Capacitor will not function!", ex);
+    }
+  }
+
+  private static String getJS(Context context, String fileName) throws IOException {
+    try {
+      BufferedReader br = new BufferedReader(new InputStreamReader(context.getAssets().open(fileName)));
 
       StringBuffer b = new StringBuffer();
       String line;
@@ -27,8 +39,28 @@ public class JSExport {
 
       return b.toString();
     } catch(IOException ex) {
-      throw new JSExportException("Unable to load native-bridge.js. Capacitor will not function!", ex);
+      throw ex;
     }
+  }
+
+  public static String getCordovaJS(Context context) {
+    String fileContent = "";
+    try {
+      fileContent = getJS(context, "public/cordova.js");
+    } catch(IOException ex) {
+      Log.e(Bridge.TAG, "Unable to read public/cordova.js file, Cordova plugins will not work");
+    }
+    return fileContent;
+  }
+
+  public static String getCordovaPluginsFileJS(Context context) {
+    String fileContent = "";
+    try {
+      fileContent = getJS(context, "public/cordova_plugins.js");
+    } catch(IOException ex) {
+      Log.e(Bridge.TAG, "Unable to read public/cordova_plugins.js file, Cordova plugins will not work");
+    }
+    return fileContent;
   }
 
   public static String getPluginJS(Collection<PluginHandle> plugins) {
@@ -62,6 +94,27 @@ public class JSExport {
     }
 
     return TextUtils.join("\n", lines);
+  }
+
+  public static String getCordovaPluginJS(Context context) {
+    return getFilesContent(context, "public/plugins");
+  }
+
+  public static String getFilesContent(Context context, String path) {
+    StringBuilder builder = new StringBuilder();
+    try {
+      String[] content = context.getAssets().list(path);
+      if (content.length  > 0) {
+        for (String file: content) {
+          builder.append(getFilesContent(context, path + "/" + file));
+        }
+      } else {
+        return getJS(context, path);
+      }
+    } catch(IOException ex) {
+      Log.e(Bridge.TAG, "Unable to read file at path "+path);
+    }
+    return builder.toString();
   }
 
   private static String generateMethodJS(PluginHandle plugin, PluginMethodHandle method) {

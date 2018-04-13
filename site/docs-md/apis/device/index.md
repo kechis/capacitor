@@ -1,12 +1,18 @@
+<plugin-platforms platforms="pwa,ios,android,electron"></plugin-platforms>
+
 # Device
 
-The Device API exposes internal information about the device
+The Device API exposes internal information about the device, such as the model and operating system version, along with user information
+such as unique ids.
+
+<plugin-api name="device" index="true"></plugin-api>
 
 ## Example
 
-
 ```typescript
-const info = await Plugins.Device.getInfo()
+const { Device } = Plugins;
+
+const info = await Device.getInfo();
 console.log(info);
 
 // Example output:

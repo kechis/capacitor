@@ -1,3 +1,4 @@
+.idea/
 dist
 .sourcemaps
 xcuserdata/
@@ -13,5 +14,11 @@ example/android/app/src/main/assets/public/*
 !example/android/app/src/main/assets/public/.gitkeep
 example/ios/IonicRunner/public/*
 !example/ios/IonicRunner/public/.gitkeep
-Build/
+Build/*
 Index/
+.*.sw*
+site/www
+android-template.iml
+!/build/.npmkeep
+lerna-debug.log
+capacitor-ios/

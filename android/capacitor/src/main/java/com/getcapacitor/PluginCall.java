@@ -25,7 +25,7 @@ public class PluginCall {
   private final String methodName;
   private final JSObject data;
 
-  private boolean shouldRetain = false;
+  private boolean shouldSave = false;
 
   /**
    * Indicates that this PluginCall was released, and should no longer be used
@@ -59,6 +59,14 @@ public class PluginCall {
     this.success(new JSObject());
   }
 
+  public void resolve(JSObject data) {
+    PluginResult result = new PluginResult(data);
+    this.msgHandler.sendResponseMessage(this, result, null);
+  }
+
+  public void resolve() {
+    this.success(new JSObject());
+  }
 
   public void errorCallback(String msg) {
     PluginResult errorResult = new PluginResult();
@@ -89,8 +97,17 @@ public class PluginCall {
   }
 
   public void error(String msg) {
-    this.error(msg, null);
+    error(msg, null);
   }
+
+  public void reject(String msg, Exception ex) {
+    error(msg, ex);
+  }
+
+  public void reject(String msg) {
+    error(msg, null);
+  }
+
 
   public String getPluginId() { return this.pluginId; }
 
@@ -126,6 +143,32 @@ public class PluginCall {
 
     if(value instanceof Integer) {
       return (Integer) value;
+    }
+    return defaultValue;
+  }
+
+  public Float getFloat(String name) {
+    return this.getFloat(name, null);
+  }
+  public Float getFloat(String name, Float defaultValue) {
+    Object value = this.data.opt(name);
+    if(value == null) { return defaultValue; }
+
+    if(value instanceof Float) {
+      return (Float) value;
+    }
+    return defaultValue;
+  }
+
+  public Double getDouble(String name) {
+    return this.getDouble(name, null);
+  }
+  public Double getDouble(String name, Double defaultValue) {
+    Object value = this.data.opt(name);
+    if(value == null) { return defaultValue; }
+
+    if(value instanceof Double) {
+      return (Double) value;
     }
     return defaultValue;
   }
@@ -186,24 +229,27 @@ public class PluginCall {
     return defaultValue;
   }
 
+  public boolean hasOption(String name) {
+    return this.data.has(name);
+  }
+
   /**
    * Indicate that the Bridge should cache this call in order to call
    * it again later. For example, the addListener system uses this to
    * continuously call the call's callback (😆).
-   * @param shouldSave
    */
-  public void retain() {
-    this.shouldRetain = true;
+  public void save() {
+    this.shouldSave = true;
   }
 
   public void release(Bridge bridge) {
-    this.shouldRetain = false;
+    this.shouldSave = false;
     bridge.releaseCall(this);
     this.isReleased = true;
   }
 
-  public boolean isRetained() {
-    return shouldRetain;
+  public boolean isSaved() {
+    return shouldSave;
   }
 
   public boolean isReleased() {

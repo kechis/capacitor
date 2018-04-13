@@ -1,19 +1,40 @@
 import { accessSync, readFileSync } from 'fs';
-import { isAbsolute, join } from 'path';
+import { basename, isAbsolute, join, resolve } from 'path';
 import { logFatal } from './common';
-import { CliConfig, ExternalConfig, PackageJson } from './definitions';
+import { AppPluginsConfig, CliConfig, ExternalConfig, OS, PackageJson } from './definitions';
 import { currentId } from 'async_hooks';
 
 let Package: PackageJson;
 let ExtConfig: ExternalConfig;
 
 export class Config implements CliConfig {
+  windows = {
+    androidStudioPath: 'C:\\Program Files\\Android\\Android Studio\\bin\\studio64.exe'
+  };
+
+  linux = {
+    androidStudioPath: '/usr/local/android-studio/bin/studio.sh'
+  };
+
+  electron = {
+    name: 'electron',
+    platformDir: '',
+    webDir: 'app',
+    webDirAbs: '',
+    assets: {
+      templateName: 'electron-template',
+      templateDir: ''
+    }
+  };
 
   android = {
     name: 'android',
     minVersion: '21',
     platformDir: '',
     webDir: 'app/src/main/assets/public',
+    webDirAbs: '',
+    resDir: 'app/src/main/res',
+    resDirAbs: '',
     assets: {
       templateName: 'android-template',
       templateDir: ''
@@ -25,12 +46,18 @@ export class Config implements CliConfig {
     minVersion: '10.0',
     platformDir: '',
     webDir: 'public',
-    capacitorRuntimePod: `pod 'Capacitor'`,
+    webDirAbs: '',
+    capacitorRuntimePod: `pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'`,
+    capacitorCordovaRuntimePod: `pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'`,
     nativeProjectName: 'App',
     assets: {
       templateName: 'ios-template',
       templateDir: ''
     }
+  };
+
+  web = {
+    name: 'web'
   };
 
   cli = {
@@ -39,19 +66,32 @@ export class Config implements CliConfig {
     assetsName: 'assets',
     assetsDir: '',
     package: Package,
-    os: ''
+    os: OS.Unknown,
   };
 
   app = {
     rootDir: '',
-    webDir: 'public',
-    symlinkWebDir: false,
+    appId: '',
+    appName: '',
+    webDir: 'www',
+    webDirAbs: '',
     package: Package,
+    windowsAndroidStudioPath: 'C:\\Program Files\\Android\\Android Studio\\bin\\studio64.exe',
+    linuxAndroidStudioPath: '',
     extConfigName: 'capacitor.config.json',
     extConfigFilePath: '',
     extConfig: ExtConfig,
+    bundledWebRuntime: false,
+    plugins: {},
     assets: {
       templateName: 'app-template',
+      templateDir: ''
+    }
+  };
+
+  plugins = {
+    assets: {
+      templateName: 'plugin-template',
       templateDir: ''
     }
   };
@@ -68,34 +108,32 @@ export class Config implements CliConfig {
   initOS(os: string) {
     switch (os) {
       case 'darwin':
-        this.cli.os = 'mac';
+        this.cli.os = OS.Mac;
         break;
       case 'win32':
-        this.cli.os = 'windows';
-        break;
-      case 'freebsd':
-        // Sure, why not
-        this.cli.os = 'freebsd';
+        this.cli.os = OS.Windows;
         break;
       case 'linux':
-        this.cli.os = 'linux';
+        this.cli.os = OS.Linux;
         break;
     }
   }
 
   setCurrentWorkingDir(currentWorkingDir: string) {
     try {
-      this.initAppConfig(currentWorkingDir);
+      this.initAppConfig(resolve(currentWorkingDir));
       this.initAndroidConfig();
       this.initIosConfig();
+      this.initElectronConfig();
+      this.initPluginsConfig();
       this.loadExternalConfig();
       this.mergeConfigData();
 
-      // TODO: remove this code
-      // Once Capacitor library is released as a cocoapods package, this code is not needed
-      const capacitorRuntimePath = join(this.cli.assetsDir, 'Capacitor');
-      this.ios.capacitorRuntimePod = `pod 'Capacitor', :path => '${capacitorRuntimePath}'`;
+      // Post-merge
+      this.initWindowsConfig();
+      this.initLinuxConfig();
 
+      this.platforms.push(this.web.name);
     } catch (e) {
       logFatal(`Unable to load config`, e);
     }
@@ -110,25 +148,44 @@ export class Config implements CliConfig {
 
 
   private initAppConfig(currentWorkingDir: string) {
-    this.app.rootDir = currentWorkingDir,
+    this.app.rootDir = currentWorkingDir;
     this.app.package = loadPackageJson(currentWorkingDir);
     this.app.assets.templateDir = join(this.cli.assetsDir, this.app.assets.templateName);
   }
 
+  private initElectronConfig() {
+    this.platforms.push(this.electron.name);
+    this.electron.platformDir = resolve(this.app.rootDir, this.electron.name);
+    this.electron.assets.templateDir = resolve(this.cli.assetsDir, this.electron.assets.templateName);
+    this.electron.webDirAbs = resolve(this.electron.platformDir, this.electron.webDir);
+  }
 
   private initAndroidConfig() {
     this.platforms.push(this.android.name);
-    this.android.platformDir = join(this.app.rootDir, this.android.name);
-    this.android.assets.templateDir = join(this.cli.assetsDir, this.android.assets.templateName);
-    this.android.webDir = join(this.android.platformDir, this.android.webDir);
+    this.android.platformDir = resolve(this.app.rootDir, this.android.name);
+    this.android.assets.templateDir = resolve(this.cli.assetsDir, this.android.assets.templateName);
+    this.android.webDirAbs = resolve(this.android.platformDir, this.android.webDir);
+    this.android.resDirAbs = resolve(this.android.platformDir, this.android.resDir);
   }
 
 
   private initIosConfig() {
     this.platforms.push(this.ios.name);
-    this.ios.platformDir = join(this.app.rootDir, this.ios.name);
-    this.ios.assets.templateDir = join(this.cli.assetsDir, this.ios.assets.templateName);
-    this.ios.webDir = join(this.ios.platformDir, this.ios.nativeProjectName, this.ios.webDir);
+    this.ios.platformDir = resolve(this.app.rootDir, this.ios.name);
+    this.ios.assets.templateDir = resolve(this.cli.assetsDir, this.ios.assets.templateName);
+    this.ios.webDirAbs = resolve(this.ios.platformDir, this.ios.nativeProjectName, this.ios.webDir);
+  }
+
+  private initWindowsConfig() {
+    this.windows.androidStudioPath = this.app.windowsAndroidStudioPath && this.app.windowsAndroidStudioPath;
+  }
+
+  private initLinuxConfig() {
+    this.linux.androidStudioPath = this.app.linuxAndroidStudioPath && this.app.linuxAndroidStudioPath;
+  }
+
+  private initPluginsConfig() {
+    this.plugins.assets.templateDir = join(this.cli.assetsDir, this.plugins.assets.templateName);
   }
 
   private mergeConfigData() {
@@ -136,22 +193,21 @@ export class Config implements CliConfig {
 
     Object.assign(this.app, extConfig);
 
-    if (!isAbsolute(this.app.webDir)) {
-      this.app.webDir = join(this.app.rootDir, this.app.webDir);
-    }
+    // Build the absolute path to the web directory
+    this.app.webDirAbs = resolve(this.app.rootDir, this.app.webDir);
   }
 
   loadExternalConfig() {
     this.app.extConfigFilePath = join(this.app.rootDir, this.app.extConfigName);
 
     try {
-      const extConfigStr = readFileSync(this.app.extConfigFilePath, 'utf-8');
+      const extConfigStr = readFileSync(this.app.extConfigFilePath, 'utf8');
 
       try {
         // we've got an capacitor.json file, let's parse it
         this.app.extConfig = JSON.parse(extConfigStr);
       } catch (e) {
-        logFatal(`error parsing: ${this.app.extConfigFilePath}`);
+        logFatal(`error parsing: ${basename(this.app.extConfigFilePath)}\n`, e);
       }
 
     } catch {
@@ -172,7 +228,7 @@ export class Config implements CliConfig {
         logFatal(`Invalid platform: ${platformName}`);
 
       } else if (!this.platformDirExists(platformName)) {
-        platformNotCreatedError(platformName);
+        this.platformNotCreatedError(platformName);
       }
 
       // return the platform in an string array
@@ -220,15 +276,23 @@ export class Config implements CliConfig {
       platforms.push(this.ios.name);
     }
 
+    if (this.platformDirExists(this.electron.name)) {
+      platforms.push(this.electron.name);
+    }
+
+    platforms.push(this.web.name);
+
     return platforms;
   }
-
 
   platformDirExists(platformName: any): string {
     let platformDir: any = null;
 
     try {
       let testDir = join(this.app.rootDir, platformName);
+      if (platformName === 'web') {
+        testDir = this.app.webDirAbs;
+      }
       accessSync(testDir);
       platformDir = testDir;
     } catch (e) {}
@@ -236,18 +300,18 @@ export class Config implements CliConfig {
     return platformDir;
   }
 
-
   isValidPlatform(platform: any) {
     return this.platforms.includes(platform);
   }
 
+  platformNotCreatedError(platformName: string) {
+    const chalk = require('chalk');
+    if (platformName === 'web') {
+      logFatal(`Could not find the web platform directory. Make sure ${chalk.bold(this.app.webDir)} exists.`);
+    }
+    logFatal(`${chalk.bold(platformName)}" platform has not been created. Use "capacitor add ${platformName}" to add the platform project.`);
+  }
 }
-
-
-function platformNotCreatedError(platformName: string) {
-  logFatal(`"${platformName}" platform has not been created. Please use "capacitor create ${platformName}" command to first create the platform.`);
-}
-
 
 function loadPackageJson(dir: string): PackageJson {
   let p: any = null;

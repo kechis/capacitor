@@ -3,21 +3,22 @@
 
 @class CAPBridge;
 @class CAPPluginCall;
+@class CAPConfig;
 
 @interface CAPPlugin : NSObject
 
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, strong) NSString *pluginId;
+@property (nonatomic, strong) NSString *pluginName;
 @property (nonatomic, strong) CAPBridge *bridge;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<CAPPluginCall *>*> *eventListeners;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, id> *retainedEventArguments;
 
-- (instancetype) initWithBridge:(CAPBridge*) bridge pluginId:(NSString*) pluginId;
+- (instancetype) initWithBridge:(CAPBridge*) bridge pluginId:(NSString*) pluginId pluginName:(NSString*) pluginName;
 - (void)addEventListener:(NSString *) eventName listener:(CAPPluginCall *)listener;
 - (void)removeEventListener:(NSString *) eventName listener:(CAPPluginCall *)listener;
 - (void)notifyListeners:(NSString *) eventName data:(NSDictionary<NSString *, id>*)data;
 - (void)notifyListeners:(NSString *) eventName data:(NSDictionary<NSString *, id>*)data retainUntilConsumed:(BOOL)retain;
-
 - (NSArray<CAPPluginCall *>*)getListeners:(NSString *)eventName;
 - (BOOL)hasListeners:(NSString *)eventName;
 - (void)addListener:(CAPPluginCall *)call;
@@ -29,6 +30,7 @@
 -(void) load;
 -(NSString *)getId;
 -(BOOL)getBool:(CAPPluginCall*) call field:(NSString *)field defaultValue:(BOOL)defaultValue;
+-(id)getConfigValue:(NSString *) key;
 -(void)setCenteredPopover:(UIViewController *) vc;
 
 @end

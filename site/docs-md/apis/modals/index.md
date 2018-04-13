@@ -1,22 +1,28 @@
+<plugin-platforms platforms="pwa,ios,android,electron"></plugin-platforms>
+
 # Modals
 
-The Modals API provides methods for triggering native modal windows for alerts, confirmations, and input prompts, along
-with Action Sheets and the native Share modal.
+The Modals API provides methods for triggering native modal windows for alerts, confirmations, and input prompts, as
+well as Action Sheets.
+
+<plugin-api index="true" name="modals"></plugin-api>
 
 ## Example
 
 ```javascript
-import { Plugins } from '@avocadojs/core';
+import { Plugins } from '@capacitor/core';
+
+const { Modals } = Plugins;
 
 async showAlert() {
-  let alertRet = await Plugins.Modals.alert({
+  let alertRet = await Modals.alert({
     title: 'Stop',
     message: 'this is an error'
   });
 }
 
 async showConfirm() {
-  let confirmRet = await Plugins.Modals.confirm({
+  let confirmRet = await Modals.confirm({
     title: 'Confirm',
     message: 'Are you sure you\'d like to press the red button?'
   });
@@ -24,7 +30,7 @@ async showConfirm() {
 }
 
 async showPrompt() {
-  let promptRet = await Plugins.Modals.prompt({
+  let promptRet = await Modals.prompt({
     title: 'Hello',
     message: 'What\'s your name?'
   });
@@ -32,7 +38,7 @@ async showPrompt() {
 }
 
 async showActions() {
-  let promptRet = await Plugins.Modals.showActions({
+  let promptRet = await Modals.showActions({
     title: 'Photo Options',
     message: 'Select an option to perform',
     options: [
@@ -49,15 +55,6 @@ async showActions() {
     ]
   })
   console.log('You selected', promptRet);
-}
-
-async showSharing() {
-  let shareRet = await Plugins.Modals.showSharing({
-    message: 'Really awesome thing you need to see right meow',
-    url: 'http://ionicframework.com/',
-    subject: 'See cool stuff'
-  });
-  console.log('Share return', shareRet);
 }
 ```
 

@@ -13,42 +13,43 @@ public struct GeolocationCoords {
 
 class GetLocationHandler: NSObject, CLLocationManagerDelegate {
   var locationManager = CLLocationManager()
-  var call: CAPPluginCall?
+  var call: CAPPluginCall
   
   init(call: CAPPluginCall, options: [String:Any]) {
-    super.init()
-    
     self.call = call
+    
+    super.init()
     
     // TODO: Allow user to configure accuracy, request/authorization mode
     self.locationManager.delegate = self
     self.locationManager.requestWhenInUseAuthorization()
     self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
     
-    if let shouldWatch = options["watch"], shouldWatch as! Bool == true {
+    if let shouldWatch = options["watch"], shouldWatch as? Bool == true {
       self.locationManager.startUpdatingLocation()
     } else {
       self.locationManager.requestLocation()
     }
   }
   
+  public func stopUpdating() {
+    self.locationManager.stopUpdatingLocation()
+  }
+  
   func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-    print("Error while updating location " + error.localizedDescription)
-    if let call = self.call {
-      call.error(error.localizedDescription, error, [
-        "message": error.localizedDescription
-      ])
-    }
+    call.error(error.localizedDescription, error, [
+      "message": error.localizedDescription
+    ])
   }
   
   func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
     if let location = locations.first  {
       let result = makePosition(location)
 
-      call!.success(result)
+      call.success(result)
     } else {
       // TODO: Handle case where location is nil
-      call!.success()
+      call.success()
     }
   }
   
@@ -61,17 +62,17 @@ class GetLocationHandler: NSObject, CLLocationManagerDelegate {
     coords["altitude"] = location.altitude
     coords["speed"] = location.speed
     coords["heading"] = location.course
+    ret["coords"] = coords
     return ret
   }
 }
 
-@objc(Geolocation)
-public class Geolocation : CAPPlugin {
-  // TODO: Figure out better way to save the call hander (strong reference)
-  var locationHandler: CLLocationManagerDelegate?
-  var watchLocationHandler: CLLocationManagerDelegate?
+@objc(CAPGeolocationPlugin)
+public class CAPGeolocationPlugin : CAPPlugin {
+  var locationHandler: GetLocationHandler?
+  var watchLocationHandler: GetLocationHandler?
   
-  @objc public func getCurrentPosition(_ call: CAPPluginCall) {
+  @objc func getCurrentPosition(_ call: CAPPluginCall) {
     DispatchQueue.main.async {
       self.locationHandler = GetLocationHandler(call: call, options:[
         "watch": false
@@ -79,12 +80,30 @@ public class Geolocation : CAPPlugin {
     }
   }
   
-  @objc public func watchPosition(_ call: CAPPluginCall) {
+  @objc func watchPosition(_ call: CAPPluginCall) {
+    call.save()
+    
     DispatchQueue.main.async {
       self.watchLocationHandler = GetLocationHandler(call: call, options:[
         "watch": true
       ]);
     }
+  }
+  
+  @objc func clearWatch(_ call: CAPPluginCall) {
+    guard let callbackId = call.getString("id") else {
+      print("Must supply id")
+      return
+    }
+    let savedCall = bridge.getSavedCall(callbackId)
+    if savedCall != nil {
+      bridge.releaseCall(savedCall!)
+      
+      if self.watchLocationHandler != nil {
+        self.watchLocationHandler?.stopUpdating()
+      }
+    }
+    call.success()
   }
   
 }

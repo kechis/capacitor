@@ -1,5 +1,5 @@
 import { accessSync } from 'fs';
-import { add, isInstalled, logFatal, logSuccess, readXML, runTask } from '../common';
+import { check, isInstalled, logFatal, logSuccess, readXML } from '../common';
 import { existsAsync, readFileAsync } from '../util/fs';
 import { Config } from '../config';
 import { join } from 'path';
@@ -7,18 +7,15 @@ import { join } from 'path';
 
 export async function doctorAndroid(config: Config) {
   try {
-    await runTask('Checking Android Environment', () => {
-      return add(
-        config,
-        [
-          checkAndroidInstalled,
-          checkGradlew,
-          checkAppSrcDirs
-        ]
-      );
-    });
+    await check(
+      config,
+      [
+        checkAndroidInstalled,
+        checkGradlew,
+        checkAppSrcDirs
+      ]
+    );
     logSuccess('Android looking great! 👌');
-
   } catch (e) {
     logFatal(e);
   }
@@ -46,9 +43,9 @@ async function checkAppSrcDirs(config: Config) {
     return `"assets" directory is missing in: ${appSrcMainDir}`;
   }
 
-  const appSrcMainAssetsWwwDir = join(appSrcMainAssetsDir, 'www');
+  const appSrcMainAssetsWwwDir = join(appSrcMainAssetsDir, 'public');
   if (!await existsAsync(appSrcMainAssetsWwwDir)) {
-    return `"www" directory is missing in: ${appSrcMainAssetsDir}`;
+    return `"public" directory is missing in: ${appSrcMainAssetsDir}`;
   }
 
   const appSrcMainAssetsWwwIndexHtmlDir = join(appSrcMainAssetsWwwDir, 'index.html');
@@ -194,7 +191,7 @@ async function checkBuildGradle(config: Config, packageId: string) {
     return `${fileName} file is missing in: ${appDir}`;
   }
 
-  let fileContent = await readFileAsync(filePath, 'utf-8');
+  let fileContent = await readFileAsync(filePath, 'utf8');
 
   fileContent = fileContent.replace(/'|"/g, '').replace(/\s+/g, ' ');
 
@@ -218,8 +215,10 @@ async function checkGradlew(config: Config) {
 }
 
 async function checkAndroidInstalled() {
+  /*
   if (!await isInstalled('android')) {
     return 'Android is not installed. For information: https://developer.android.com/studio/index.html';
   }
+  */
   return null;
 }

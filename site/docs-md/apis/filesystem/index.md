@@ -1,38 +1,70 @@
+<plugin-platforms platforms="pwa,ios,android,electron"></plugin-platforms>
+
 # Filesystem
 
 The Filsystem API provides a NodeJS-like API for working with files on the device.
 
-Current mobile OS's have additional layers of separation between files, such as special directories that are backed up to the Cloud, or ones for storing Documents. The Filesystem API offers a simple way to scope each operation to a specific special directory on the device.
-
 <plugin-api index="true" name="filesystem"></plugin-api>
+
+## Understanding Directories and Files
+
+iOS and Android have additional layers of separation between files, such as special directories that are backed up to the Cloud, or ones for storing Documents. The Filesystem API offers a simple way to scope each operation to a specific special directory on the device.
+
+Additionally, the Filesystem API supports using full `file://` paths, or reading `content://` files on Android. Simply
+leave out the `directory` param to use a full file path.
 
 ## Example
 
 ```typescript
+import { Plugins, FilesystemDirectory, FilesystemEncoding } from '@capacitor/core';
+
+const { Filesystem } = Plugins;
+
 fileWrite() {
   try {
-    Plugins.Filesystem.writeFile('secrets/text.txt', "This is a test", FilesystemDirectory.Documents, 'utf8')
+    Filesystem.writeFile({
+      path: 'secrets/text.txt',
+      data: "This is a test",
+      directory: FilesystemDirectory.Documents,
+      encoding: FilesystemEncoding.UTF8
+    })
   } catch(e) {
     console.error('Unable to write file', e);
   }
 }
 
 async fileRead() {
-  let contents = await Plugins.Filesystem.readFile('secrets/text.txt', FilesystemDirectory.Documents, 'utf8');
+  let contents = await Filesystem.readFile({
+    path: 'secrets/text.txt',
+    directory: FilesystemDirectory.Documents,
+    encoding: FilesystemEncoding.UTF8
+  });
   console.log(contents);
 }
 
 async fileAppend() {
-  await Plugins.Filesystem.appendFile('secrets/text.txt', "MORE TESTS", FilesystemDirectory.Documents, 'utf8');
+  await Filesystem.appendFile({
+    path: 'secrets/text.txt',
+    data: "MORE TESTS",
+    directory: FilesystemDirectory.Documents,
+    encoding: FilesystemEncoding.UTF8
+  });
 }
 
 async fileDelete() {
-  await Plugins.Filesystem.deleteFile('secrets/text.txt', FilesystemDirectory.Documents);
+  await Filesystem.deleteFile({
+    path: 'secrets/text.txt',
+    directory: FilesystemDirectory.Documents
+  });
 }
 
 async mkdir() {
   try {
-    let ret = await Plugins.Filesystem.mkdir('secrets', FilesystemDirectory.Documents, false);
+    let ret = await Filesystem.mkdir({
+      path: 'secrets',
+      directory: FilesystemDirectory.Documents,
+      createIntermediateDirectories: false // like mkdir -p
+    });
   } catch(e) {
     console.error('Unable to make directory', e);
   }
@@ -40,7 +72,10 @@ async mkdir() {
 
 async rmdir() {
   try {
-    let ret = await Plugins.Filesystem.rmdir('secrets', FilesystemDirectory.Documents);
+    let ret = await Filesystem.rmdir({
+      path: 'secrets',
+      directory: FilesystemDirectory.Documents
+    });
   } catch(e) {
     console.error('Unable to remove directory', e);
   }
@@ -48,7 +83,10 @@ async rmdir() {
 
 async readdir() {
   try {
-    let ret = await Plugins.Filesystem.readdir('secrets', FilesystemDirectory.Documents);
+    let ret = await Filesystem.readdir({
+      path: 'secrets',
+      directory: FilesystemDirectory.Documents
+    });
   } catch(e) {
     console.error('Unable to read dir', e);
   }
@@ -56,9 +94,23 @@ async readdir() {
 
 async stat() {
   try {
-    let ret = await Plugins.Filesystem.stat('secrets/text.txt', FilesystemDirectory.Documents);
+    let ret = await Filesystem.stat({
+      path: 'secrets/text.txt',
+      directory: FilesystemDirectory.Documents
+    });
   } catch(e) {
     console.error('Unable to stat file', e);
+  }
+}
+
+async readFilePath() {
+  // Here's an example of reading a file with a full file path. Use this to
+  // read binary data (base64 encoded) from plugins that return File URIs, such as
+  // the Camera.
+  try {
+    let data = await Filesystem.readFile({
+      path: 'file:///var/mobile/Containers/Data/Application/22A433FD-D82D-4989-8BE6-9FC49DEA20BB/Documents/text.txt'
+    })
   }
 }
 ```

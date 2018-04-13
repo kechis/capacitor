@@ -1,4 +1,33 @@
+<plugin-platforms platforms="pwa,ios,android,electron"></plugin-platforms>
+
 # Network
+
+The Network API provides events for monitoring network status changes, along with querying the current state of the network.
+
+<plugin-api index="true" name="network"></plugin-api>
+
+## Example
+
+```typescript
+import { Plugins } from '@capacitor/core';
+
+const { Network } = Plugins;
+
+let handler = Network.addListener('networkStatusChange', (status) => {
+  console.log("Network status changed", status);
+});
+// To stop listening:
+// handler.remove();
+
+// Get the current network status
+let status = await Network.getStatus();
+
+// Example output:
+{
+  "connected": true,
+  "connectionType": "wifi"
+}
+```
 
 ## Android Note
 

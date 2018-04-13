@@ -1,4 +1,4 @@
-import { Component, Prop, PropDidChange, State } from '@stencil/core';
+import { Component, Prop } from '@stencil/core';
 
 @Component({
   tag: 'avc-code-type'
@@ -9,7 +9,7 @@ export class AvcCodeType {
 
   render() {
     if(this.typeId) {
-      return (<a href="#"><slot></slot></a>);
+      return (<anchor-link to={`type-${this.typeId}`}><slot></slot></anchor-link>);
     }
     return (
       <slot></slot>

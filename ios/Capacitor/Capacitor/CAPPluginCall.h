@@ -17,12 +17,14 @@
 
 @end
 
-typedef void(^CAPPluginCallSuccessHandler)(CAPPluginCallResult *result);
+@class CAPPluginCall;
+
+typedef void(^CAPPluginCallSuccessHandler)(CAPPluginCallResult *result, CAPPluginCall* call);
 typedef void(^CAPPluginCallErrorHandler)(CAPPluginCallError *error);
 
 @interface CAPPluginCall : NSObject
 
-@property (nonatomic, assign) BOOL save;
+@property (nonatomic, assign) BOOL isSaved;
 @property (nonatomic, strong) NSString *callbackId;
 @property (nonatomic, strong) NSDictionary *options;
 @property (nonatomic, copy) CAPPluginCallSuccessHandler successHandler;
@@ -30,6 +32,7 @@ typedef void(^CAPPluginCallErrorHandler)(CAPPluginCallError *error);
 
 - (instancetype)initWithCallbackId:(NSString *)callbackId options:(NSDictionary *)options success:(CAPPluginCallSuccessHandler)success error:(CAPPluginCallErrorHandler)error;
 
+- (void)save;
 @end
 
 

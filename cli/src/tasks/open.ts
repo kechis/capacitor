@@ -1,8 +1,7 @@
 import { Config } from '../config';
-import { logFatal, logInfo, runTask } from '../common';
+import { log, logFatal, logInfo, runTask } from '../common';
 import { openAndroid } from '../android/open';
 import { openIOS } from '../ios/open';
-
 
 export async function openCommand(config: Config, selectedPlatform: string) {
   const platforms = config.selectPlatforms(selectedPlatform);
@@ -30,10 +29,10 @@ export async function open(config: Config, platformName: string) {
     await runTask('Opening the Xcode workspace...', () => {
       return openIOS(config);
     });
-
   } else if (platformName === config.android.name) {
     return openAndroid(config);
-
+  } else if (platformName === config.web.name) {
+    return Promise.resolve();
   } else {
     throw `Platform ${platformName} is not valid.`;
   }

@@ -21,6 +21,8 @@
 #import <UIKit/UIKit.h>
 #import "CDVPluginResult.h"
 #import "CDVCommandDelegate.h"
+#import "CDVAvailability.h"
+#import <WebKit/WebKit.h>
 
 @interface UIView (org_apache_cordova_UIView_Extension)
 
@@ -52,6 +54,7 @@ extern NSString* const CDVViewWillTransitionToSizeNotification;
 
 @property (nonatomic, weak) UIView* webView;
 @property (nonatomic, weak) id webViewEngine;
+@property (nonatomic, strong) NSString * className;
 
 @property (nonatomic, weak) UIViewController* viewController;
 @property (nonatomic, strong) id <CDVCommandDelegate> commandDelegate;

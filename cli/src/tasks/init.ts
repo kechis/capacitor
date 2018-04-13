@@ -1,28 +1,62 @@
 import { Config } from '../config';
+import { OS } from '../definitions';
 import { addCommand } from '../tasks/add';
-import { checkWebDir, log, logFatal, runCommand, runTask, writePrettyJSON } from '../common';
-import { cpAsync, existsAsync, mkdirAsync } from '../util/fs';
+import { copyCommand } from '../tasks/copy';
+import {
+  check,
+  checkAppId,
+  checkAppName,
+  checkWebDir,
+  getAppId,
+  getName,
+  getOrCreateConfig,
+  log,
+  logError,
+  logFatal,
+  mergeConfig,
+  runCommand,
+  runTask
+} from '../common';
+import { copyAsync, existsAsync, mkdirAsync } from '../util/fs';
 import { download } from '../util/http';
 import { createTarExtraction } from '../util/archive';
-
+import { emoji as _e } from '../util/emoji';
 import { join, relative } from 'path';
 
 const chalk = require('chalk');
 
-export async function initCommand(config: Config) {
-  log(`${chalk.bold(`⚡️  Initializing Capacitor project in ${chalk.blue(config.cli.rootDir)}`)} ⚡️`);
-
+export async function initCommand(config: Config, name: string, id: string) {
   try {
-    const isNew = await promptNewProject(config);
-    await getOrCreateConfig(config);
-    !isNew && await getOrCreateWebDir(config);
-    await checkPackageJson(config);
-    isNew && await seedProject(config);
-    await installDeps(config);
-    await addPlatforms(config);
+    // Get app name
+    const appName = await getName(config, name);
+    // Get app identifier
+    const appId = await getAppId(config, id);
+
+    await check(
+      config,
+      [
+        (config) => checkAppName(config, appName),
+        (config) => checkAppId(config, appId)
+      ]
+    );
+
+    await runTask(`Initializing Capacitor project in ${chalk.blue(config.app.rootDir)}`, async () => {
+      config.app.appId = appId;
+      config.app.appName = appName;
+
+      // Get or create our config
+      await getOrCreateConfig(config);
+      await mergeConfig(config, {
+        appId,
+        appName
+      });
+    });
+
     await printNextSteps(config);
   } catch (e) {
-    logFatal(`Unable to initialize Capacitor. Please see errors and try again or file an issue`, e);
+    log('Usage: npx cap init appName appId\n');
+    log('Example: npx cap init "My App" "com.example.myapp"\n');
+    logFatal(e);
   }
 }
 
@@ -38,75 +72,15 @@ async function promptNewProject(config: Config): Promise<boolean> {
   return answers.isNew === 'y';
 }
 
-/**
- * Check for or create our main configuration file.
- * @param config
- */
-async function getOrCreateConfig(config: Config) {
-  const configPath = join(config.app.rootDir, config.app.extConfigName);
-  if (await existsAsync(configPath)) {
-    return configPath;
+async function printExistingProjectMessage(config: Config) {
+  log('\n\n');
+  log(`${_e('🎈', '*')}   ${chalk.bold('Adding Capacitor to an existing project is easy:')}  ${_e('🎈', '*')}`);
+  log(`\nnpm install --save @capacitor/cli @capacitor/core`);
+  if (config.cli.os === OS.Mac) {
+    log(`\nnpx capacitor add ios`);
   }
-
-  await writePrettyJSON(config.app.extConfigFilePath, {
-    webDir: relative(config.app.rootDir, config.app.webDir)
-  });
-
-  // Store our newly created or found external config as the default
-  config.loadExternalConfig();
-}
-
-/**
- * Check for or create the main web assets directory (i.e. public/)
- * @param config
- */
-async function getOrCreateWebDir(config: Config) {
-  const inquirer = await import('inquirer');
-  const answers = await inquirer.prompt([{
-    type: 'input',
-    name: 'webDir',
-    message: 'What directory will your built web assets be in?',
-    default: 'public'
-  }]);
-
-  const webDir = answers.webDir;
-  if (!await existsAsync(config.app.webDir)) {
-    await createWebDir(config, webDir);
-  }
-  config.app.webDir = webDir;
-}
-
-/**
- * Check for or create the main package.json file
- * @param config
- */
-async function checkPackageJson(config: Config) {
-  if (!await existsAsync(join(config.app.rootDir, 'package.json'))) {
-    await cpAsync(join(config.app.assets.templateDir, 'package.json'), 'package.json');
-  }
-}
-
-async function installDeps(config: Config) {
-  let command = 'npm install';
-  await runTask(`Installing dependencies for seed project (${chalk.blue(command)})`, () => {
-   return runCommand(command);
-  });
-
-  command = 'npm install --save @capacitor/core @capacitor/cli';
-  await runTask(`Installing Capacitor dependencies (${chalk.blue(command)})`, () => {
-   return runCommand(command);
-  });
-}
-
-async function seedProject(config: Config) {
-  await runTask(`Downloading and installing seed project`, async () => {
-    const url = 'https://github.com/ionic-team/ionic-pwa-toolkit/archive/master.tar.gz';
-    const ws = await createTarExtraction({ cwd: config.app.rootDir, strip: 1 });
-    await download(url, ws, {
-      // progress: (loaded, total) => task.progress(loaded, total),
-    });
-    return Promise.resolve();
-  });
+  log(`\nnpx capacitor add android`);
+  log(`\nLearn more: https://capacitor.ionicframework.com/docs/getting-started/\n`);
 }
 
 /**
@@ -115,35 +89,24 @@ async function seedProject(config: Config) {
  */
 async function addPlatforms(config: Config) {
   await runTask(`Adding native platforms`, async () => {
-    await addCommand(config, 'ios');
-    return await addCommand(config, 'android');
-  });
-}
-
-/**
- * Create the web directory and copy our default public assets
- * @param config
- * @param webDir
- */
-async function createWebDir(config: Config, webDir: string) {
-
-  await mkdirAsync(webDir);
-
-  await runTask(`Creating ${config.app.extConfigName}`, () => {
-    return writePrettyJSON(config.app.extConfigFilePath, {
-      webDir: webDir
+    if (config.cli.os === OS.Mac) {
+      await runTask(`Adding iOS platform`, async () => {
+        await addCommand(config, 'ios');
+      });
+    }
+    await runTask(`Adding Android platform`, async() => {
+      await addCommand(config, 'android');
     });
   });
-
-  await copyAppTemplatePublicAssets(config, webDir);
-}
-
-async function copyAppTemplatePublicAssets(config: Config, webDir: string) {
-  await cpAsync(join(config.app.assets.templateDir, 'public'), webDir);
 }
 
 async function printNextSteps(config: Config) {
   log('\n');
-  log(`${chalk.bold(`🎉   Your Capacitor project is ready to go!  🎉`)}\n`);
-  log(`Follow the Getting Started guide for next steps:\n${chalk.bold(`https://getcapacitor.com/docs/getting-started`)}`);
+  log(`${chalk.bold(`${_e('🎉', '*')}   Your Capacitor project is ready to go!  ${_e('🎉', '*')}`)}\n`);
+  log(`Add platforms using "npx cap add":\n`);
+  log(`  npx cap add android`);
+  log(`  npx cap add ios`);
+  log(`  npx cap add electron`);
+  log('');
+  log(`Follow the Developer Workflow guide to get building:\n${chalk.bold(`https://capacitor.ionicframework.com/docs/basics/workflow`)}`);
 }

@@ -5,16 +5,17 @@
 
 @implementation CAPPlugin
 
--(instancetype) initWithBridge:(CAPBridge *)bridge pluginId:(NSString *)pluginId {
+-(instancetype) initWithBridge:(CAPBridge *)bridge pluginId:(NSString *)pluginId pluginName:(NSString *)pluginName {
   self.bridge = bridge;
   self.pluginId = pluginId;
+  self.pluginName = pluginName;
   self.eventListeners = [[NSMutableDictionary alloc] init];
   self.retainedEventArguments = [[NSMutableDictionary alloc] init];
   return self;
 }
 
 -(NSString *) getId {
-  return self.pluginId;
+  return self.pluginName;
 }
 
 -(BOOL) getBool:(CAPPluginCall *)call field:(NSString *)field defaultValue:(BOOL)defaultValue {
@@ -32,6 +33,10 @@
     return FALSE;
   }
   return TRUE;
+}
+
+-(id)getConfigValue:(NSString *)key {
+  return [CAPConfig getPluginConfigValue:self.pluginName :key];
 }
 
 -(void)load {}
@@ -83,22 +88,22 @@
   
   for(CAPPluginCall *call in listenersForEvent) {
     CAPPluginCallResult *result = [[CAPPluginCallResult alloc] init:data];
-    call.successHandler(result);
+    call.successHandler(result, call);
   }
 }
 
 - (void)addListener:(CAPPluginCall *)call {
   NSString *eventName = [call.options objectForKey:@"eventName"];
   [self addEventListener:eventName listener:call];
-  [call setSave:TRUE];
+  [call setIsSaved:TRUE];
 }
 
 - (void)removeListener:(CAPPluginCall *)call {
   NSString *eventName = [call.options objectForKey:@"eventName"];
   NSString *callbackId = [call.options objectForKey:@"callbackId"];
-  CAPPluginCall *storedCall = [self.bridge getSavedCallWithCallbackId:callbackId];
+  CAPPluginCall *storedCall = [self.bridge getSavedCall:callbackId];
   [self removeEventListener:eventName listener:storedCall];
-  [self.bridge removeSavedCallWithCallbackId:callbackId];
+  [self.bridge releaseCallWithCallbackId:callbackId];
 }
 
 - (NSArray<CAPPluginCall *>*)getListeners:(NSString *)eventName {

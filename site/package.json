@@ -5,22 +5,24 @@
   "description": "Capacitor Site",
   "scripts": {
     "docs": "gulp",
-    "build": "gulp && stencil build --prerender",
+    "build": "gulp && bash scripts/docs.sh && stencil build --prerender",
     "dev": "gulp && sd concurrent \"stencil build --dev --watch\" \"stencil-dev-server\" ",
     "deploy": "bash scripts/deploy.sh",
     "serve": "stencil-dev-server",
-    "start": "npm run dev"
+    "start": "rm -rf www && npm run build && npm run dev"
   },
   "dependencies": {
-    "@stencil/core": "^0.1.1-0",
-    "@stencil/router": "0.0.22"
+    "@stencil/router": "0.0.25",
+    "@stencil/sass": "0.0.3"
   },
   "devDependencies": {
-    "@stencil/dev-server": "0.0.18-0",
+    "@stencil/core": "0.6.18",
+    "@stencil/dev-server": "0.0.18",
     "@stencil/utils": "latest",
     "gh-pages": "^1.0.0",
     "gulp": "^3.9.1",
     "gulp-markdown": "^2.0.1",
+    "gulp-rename": "^1.2.2",
     "highlight.js": "^9.12.0"
   },
   "author": "Ionic Team",

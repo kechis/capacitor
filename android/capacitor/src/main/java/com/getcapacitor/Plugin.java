@@ -3,12 +3,18 @@ package com.getcapacitor;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.support.v4.app.ActivityCompat;
+import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +71,7 @@ public class Plugin {
    * Get the main {@link Activity} for the app
    * @return the Activity for the current app
    */
-  public Activity getActivity() { return this.bridge.getActivity(); }
+  public AppCompatActivity getActivity() { return (AppCompatActivity) this.bridge.getActivity(); }
 
   /**
    * Set the Bridge instance for this plugin
@@ -74,6 +80,11 @@ public class Plugin {
   public void setBridge(Bridge bridge) {
     this.bridge = bridge;
   }
+
+  /**
+   * Get the Bridge instance for this plugin
+   */
+  public Bridge getBridge() { return this.bridge; }
 
   /**
    * Set the wrapper {@link PluginHandle} instance for this plugin that
@@ -117,6 +128,107 @@ public class Plugin {
    */
   public PluginCall getSavedCall() {
     return this.savedLastCall;
+  }
+
+  public Object getConfigValue(String key) {
+    try {
+      JSONObject plugins = Config.getObject("plugins");
+      if (plugins == null) {
+        return null;
+      }
+      JSONObject pluginConfig = plugins.getJSONObject(getPluginHandle().getId());
+      return pluginConfig.get(key);
+    } catch (JSONException ex) {
+      return null;
+    }
+  }
+
+  /**
+   * Given a list of permissions, return a new list with the ones not present in AndroidManifest.xml
+   * @param neededPermissions
+   * @return
+   */
+  public String[] getUndefinedPermissions(String[] neededPermissions) {
+    ArrayList<String> undefinedPermissions =  new ArrayList<String>();
+    String[] requestedPermissions = getManifestPermissions();
+    if (requestedPermissions != null && requestedPermissions.length > 0)
+    {
+      List<String> requestedPermissionsList = Arrays.asList(requestedPermissions);
+      ArrayList<String> requestedPermissionsArrayList = new ArrayList<String>();
+      requestedPermissionsArrayList.addAll(requestedPermissionsList);
+      for (String permission: neededPermissions) {
+        if (!requestedPermissionsArrayList.contains(permission)) {
+          undefinedPermissions.add(permission);
+        }
+      }
+      String[] undefinedPermissionArray = new String[undefinedPermissions.size()];
+      undefinedPermissionArray = undefinedPermissions.toArray(undefinedPermissionArray);
+
+      return undefinedPermissionArray;
+    }
+    return neededPermissions;
+  }
+
+  /**
+   * Check whether the given permission has been defined in the AndroidManifest.xml
+   * @param permission
+   * @return
+   */
+  public boolean hasDefinedPermission(String permission) {
+    boolean hasPermission = false;
+    String[] requestedPermissions = getManifestPermissions();
+    if (requestedPermissions != null && requestedPermissions.length > 0)
+    {
+      List<String> requestedPermissionsList = Arrays.asList(requestedPermissions);
+      ArrayList<String> requestedPermissionsArrayList = new ArrayList<String>();
+      requestedPermissionsArrayList.addAll(requestedPermissionsList);
+      if (requestedPermissionsArrayList.contains(permission)) {
+        hasPermission = true;
+      }
+    }
+    return hasPermission;
+  }
+
+  /**
+   * Get the permissions defined in AndroidManifest.xml
+   * @return
+   */
+  private String[] getManifestPermissions(){
+    String[] requestedPermissions = null;
+    try {
+      PackageManager pm = getContext().getPackageManager();
+      PackageInfo packageInfo = pm.getPackageInfo(getAppId(), PackageManager.GET_PERMISSIONS);
+
+      if (packageInfo != null) {
+        requestedPermissions = packageInfo.requestedPermissions;
+      }
+    } catch (Exception ex) {
+
+    }
+    return requestedPermissions;
+  }
+
+  /**
+   * Check whether any of the given permissions has been defined in the AndroidManifest.xml
+   * @param permissions
+   * @return
+   */
+  public boolean hasDefinedPermissions(String[] permissions) {
+    for (String permission: permissions) {
+      if (!hasDefinedPermission(permission)){
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Check whether any of annotation permissions has been defined in the AndroidManifest.xml
+   * @return
+   */
+  public boolean hasDefinedRequiredPermissions() {
+    NativePlugin annotation = handle.getPluginAnnotation();
+    return hasDefinedPermissions(annotation.permissions());
   }
 
   /**
@@ -239,6 +351,17 @@ public class Plugin {
   }
 
   /**
+   * Check if there are any listeners for the given event
+   */
+  protected boolean hasListeners(String eventName) {
+    List<PluginCall> listeners = eventListeners.get(eventName);
+    if (listeners == null) {
+      return false;
+    }
+    return listeners.size() > 0;
+  }
+
+  /**
    * Send retained arguments (if any) for this event. This
    * is called only when the first listener for an event is added
    * @param eventName
@@ -263,7 +386,7 @@ public class Plugin {
   public void addListener(PluginCall call) {
     String eventName = call.getString("eventName");
     addEventListener(eventName, call);
-    call.retain();
+    call.save();
   }
 
   /**
@@ -275,7 +398,7 @@ public class Plugin {
   public void removeListener(PluginCall call) {
     String eventName = call.getString("eventName");
     String callbackId = call.getString("callbackId");
-    PluginCall savedCall = bridge.getRetainedCall(callbackId);
+    PluginCall savedCall = bridge.getSavedCall(callbackId);
     if (savedCall != null) {
       removeEventListener(eventName, call);
       bridge.releaseCall(call);
@@ -313,19 +436,16 @@ public class Plugin {
    * @param grantResults
    */
   protected void handleRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-    PluginCall savedCall = getSavedCall();
-    if (savedCall == null) {
-      return;
-    }
-
-    for(int result : grantResults) {
-      if (result == PackageManager.PERMISSION_DENIED) {
-        savedCall.error("User denied permissions");
-        return;
+    if (!hasDefinedPermissions(permissions)) {
+      StringBuilder builder = new StringBuilder();
+      builder.append("Missing the following permissions in AndroidManifest.xml:\n");
+      String[] missing = getUndefinedPermissions(permissions);
+      for (String perm: missing) {
+        builder.append(perm + "\n");
       }
+      savedLastCall.error(builder.toString());
+      savedLastCall = null;
     }
-
-    savedCall.success();
   }
 
   /**
@@ -440,5 +560,9 @@ public class Plugin {
       if(i++ < l) b.append(" ");
     }
     Log.d(Bridge.TAG, b.toString());
+  }
+
+  protected void logError(final String msg, final Throwable t) {
+    Log.e(Bridge.TAG, msg, t);
   }
 }

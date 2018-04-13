@@ -1,7 +1,6 @@
 import { WebPlugin } from './index';
 
 import {
-  CancellableCallback,
   GeolocationPlugin,
   GeolocationOptions,
   GeolocationPosition,
@@ -16,7 +15,7 @@ export class GeolocationPluginWeb extends WebPlugin implements GeolocationPlugin
   constructor() {
     super({
       name: 'Geolocation',
-      platforms: ['android']
+      platforms: ['web']
     });
   }
 
@@ -36,22 +35,23 @@ export class GeolocationPluginWeb extends WebPlugin implements GeolocationPlugin
     });
   }
 
-  watchPosition(options: GeolocationOptions, callback: GeolocationWatchCallback): CancellableCallback {
+  watchPosition(options: GeolocationOptions, callback: GeolocationWatchCallback): string {
     let id = window.navigator.geolocation.watchPosition((pos) => {
-      callback(null, pos);
+      callback(pos);
     }, (err) => {
-      callback(err, null);
+      callback(null, err);
     }, extend({
       enableHighAccuracy: true,
       timeout: 10000,
       maximumAge: 0
     }, options));
 
-    return {
-      cancel: () => {
-        window.navigator.geolocation.clearWatch(id);
-      }
-    };
+    return `${id}`;
+  }
+
+  clearWatch(options: { id: string }) {
+    window.navigator.geolocation.clearWatch(parseInt(options.id, 10));
+    return Promise.resolve();
   }
 }
 

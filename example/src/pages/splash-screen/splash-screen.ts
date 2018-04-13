@@ -1,8 +1,7 @@
 import { Component } from '@angular/core';
 import { IonicPage, NavController, NavParams } from 'ionic-angular';
-import {
-  Plugins
-} from '@capacitor/core';
+import { Plugins } from '@capacitor/core';
+const { SplashScreen } = Plugins;
 
 /**
  * Generated class for the SplashScreenPage page.
@@ -25,19 +24,26 @@ export class SplashScreenPage {
     console.log('ionViewDidLoad SplashScreenPage');
   }
 
-  showSplash() {
-    Plugins.SplashScreen.show({
-      autoHide: false
+  showSplashAutoHide() {
+    SplashScreen.show({
+      autoHide: true
     });
-    setTimeout(() => {
-      Plugins.SplashScreen.hide();
-    }, 6000);
   }
 
-  showSplashAutoFade() {
-    Plugins.SplashScreen.show({
+  showSplashAutoHide2s() {
+    SplashScreen.show({
       showDuration: 2000,
       autoHide: true
     });
   }
+
+  showSplash6s() {
+    SplashScreen.show({
+      autoHide: false
+    });
+    setTimeout(() => {
+      SplashScreen.hide();
+    }, 6000);
+  }
+
 }

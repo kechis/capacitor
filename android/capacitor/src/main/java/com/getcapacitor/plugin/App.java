@@ -3,7 +3,6 @@ package com.getcapacitor.plugin;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.util.Log;
 
@@ -15,12 +14,9 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.PluginResult;
 
-import org.json.JSONException;
-
-import java.util.List;
-
 @NativePlugin()
 public class App extends Plugin {
+  private static final String EVENT_BACK_BUTTON = "backButton";
   private static final String EVENT_URL_OPEN = "appUrlOpen";
   private static final String EVENT_STATE_CHANGE = "appStateChange";
   private static final String EVENT_RESTORED_RESULT = "appRestoredResult";
@@ -35,6 +31,22 @@ public class App extends Plugin {
   public void fireRestoredResult(PluginResult result) {
     Log.d(Bridge.TAG, "Firing restored result");
     notifyListeners(EVENT_RESTORED_RESULT, result.getData(), true);
+  }
+
+  public void fireBackButton() {
+    notifyListeners(EVENT_BACK_BUTTON, new JSObject(), true);
+
+    // For Cordova compat, emit the backbutton event
+    bridge.triggerJSEvent("backbutton", "document");
+  }
+
+  public boolean hasBackButtonListeners() {
+    return hasListeners(EVENT_BACK_BUTTON);
+  }
+
+  @PluginMethod()
+  public void exitApp(PluginCall call) {
+    getBridge().getActivity().finish();
   }
 
   @PluginMethod()
@@ -113,4 +125,5 @@ public class App extends Plugin {
     ret.put("url", url.toString());
     notifyListeners(EVENT_URL_OPEN, ret);
   }
+
 }

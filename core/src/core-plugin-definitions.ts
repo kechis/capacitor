@@ -4,6 +4,7 @@ declare global {
   interface PluginRegistry {
     Accessibility?: AccessibilityPlugin;
     App?: AppPlugin;
+    BackgroundTask?: BackgroundTaskPlugin;
     Browser?: BrowserPlugin;
     Camera?: CameraPlugin;
     Clipboard?: ClipboardPlugin;
@@ -17,12 +18,16 @@ declare global {
     Motion?: MotionPlugin;
     Network?: NetworkPlugin;
     Photos?: PhotosPlugin;
+    Share?: SharePlugin;
     SplashScreen?: SplashScreenPlugin;
     StatusBar?: StatusBarPlugin;
+    Storage?: StoragePlugin;
+    Toast?: ToastPlugin;
   }
 }
 
 export type ISODateString = string;
+export type CallbackID = string;
 
 /**
  * CancellableCallback is a simple wrapper that a method will
@@ -70,11 +75,18 @@ export interface AccessibilitySpeakOptions {
 export interface ScreenReaderEnabledResult {
   value: boolean;
 }
-export type ScreenReaderStateChangeCallback = (err: any, state: ScreenReaderEnabledResult) => void;
+export type ScreenReaderStateChangeCallback = (state: ScreenReaderEnabledResult) => void;
 
 //
 
 export interface AppPlugin extends Plugin {
+  /**
+   * Force exit the app. This should only be used in conjunction with the `backButton` handler for Android to
+   * exit the app when navigation is complete.
+   * 
+   * Ionic handles this itself so you shouldn't need to call this if using Ionic
+   */
+  exitApp(): never;
   /**
    * Check if an app can be opened with the given URL
    */
@@ -93,20 +105,25 @@ export interface AppPlugin extends Plugin {
   /**
    * Listen for changes in the App's active state (whether the app is in the foreground or background)
    */
-  addListener(eventName: 'appStateChange', listenerFunc: (err: any, state: AppState) => void): PluginListenerHandle;
+  addListener(eventName: 'appStateChange', listenerFunc: (state: AppState) => void): PluginListenerHandle;
 
   /**
    * Listen for url open events for the app. This handles both custom URL scheme links as well
    * as URLs your app handles (Universal Links on iOS and App Links on Android)
    */
-  addListener(eventName: 'appUrlOpen', listenerFunc: (err: any, data: AppUrlOpen) => void): PluginListenerHandle;
+  addListener(eventName: 'appUrlOpen', listenerFunc: (data: AppUrlOpen) => void): PluginListenerHandle;
 
   /**
    * If the app was launched with previously persisted plugin call data, such as on Android
    * when an activity returns to an app that was closed, this call will return any data
    * the app was launched with, converted into the form of a result from a plugin call.
    */
-  addListener(eventName: 'appRestoredResult', listenerFunc: (err: any, data: any) => void): PluginListenerHandle;
+  addListener(eventName: 'appRestoredResult', listenerFunc: (data: AppRestoredResult) => void): PluginListenerHandle;
+
+  /**
+   * Listen for the hardware back button event (Android only). If you want to close the app, call `App.exitApp()`
+   */
+  addListener(eventName: 'backButton', listenerFunc: (data: AppUrlOpen) => void): PluginListenerHandle;
 }
 
 export interface AppState {
@@ -114,14 +131,68 @@ export interface AppState {
 }
 
 export interface AppUrlOpen {
+  /**
+   * The URL the app was opened with
+   */
   url: string;
 
+  /**
+   * The source application opening the app (iOS only)
+   * https://developer.apple.com/documentation/uikit/uiapplicationopenurloptionskey/1623128-sourceapplication
+   */
   iosSourceApplication?: any;
+  /**
+   * Whether the app should open the passed document in-place
+   * or must copy it first.
+   * https://developer.apple.com/documentation/uikit/uiapplicationopenurloptionskey/1623123-openinplace
+   */
   iosOpenInPlace?: boolean;
 }
 
 export interface AppLaunchUrl {
   url: string;
+}
+
+export interface AppRestoredResult {
+  /**
+   * The pluginId this result corresponds to. For example, `Camera`.
+   */
+  pluginId: string;
+  /**
+   * The methodName this result corresponds to. For example, `getPhoto`
+   */
+  methodName: string;
+  /**
+   * The result data passed from the plugin. This would be the result you'd
+   * expect from normally calling the plugin method. For example, `CameraPhoto`
+   */
+  data: any;
+}
+
+//
+
+export interface BackgroundTaskPlugin extends Plugin {
+  /**
+   * When the app is backgrounded, this method allows you to run a short-lived
+   * background task that will ensure that you
+   * can finish any work your app needs to do (such as finishing an upload
+   * or network request). This is especially important on iOS as any operations
+   * would normally be suspended without initiating a background task.
+   * 
+   * This method should finish in less than 3 minutes or your app risks
+   * being terminated by the OS.
+   * 
+   * When you are finished, this callback _must_ call `BackgroundTask.finish({ taskId })`
+   * where `taskId` is the value returned from `BackgroundTask.beforeExit()`
+   * @param cb the task to run when the app is backgrounded but before it is terminated
+   */
+  beforeExit(cb: Function): CallbackID;
+
+  /**
+   * Notify the OS that the given task is finished and the OS can continue
+   * backgrounding the app.
+   */
+  finish(options: {taskId: CallbackID}): void;
 }
 
 //
@@ -145,8 +216,8 @@ export interface BrowserPlugin extends Plugin {
    */
   close(): Promise<void>;
 
-  addListener(eventName: 'browserFinished', listenerFunc: (err: any, info: any) => void): PluginListenerHandle;
-  addListener(eventName: 'browserPageLoaded', listenerFunc: (err: any, info: any) => void): PluginListenerHandle;
+  addListener(eventName: 'browserFinished', listenerFunc: (info: any) => void): PluginListenerHandle;
+  addListener(eventName: 'browserPageLoaded', listenerFunc: (info: any) => void): PluginListenerHandle;
 }
 
 export interface BrowserOpenOptions {
@@ -154,6 +225,13 @@ export interface BrowserOpenOptions {
    * The URL to open the browser to
    */
   url: string;
+
+  /**
+   * Web only: Optional target for browser open. Follows
+   * the `target` property for window.open. Defaults
+   * to _blank
+   */
+  windowName?: string;
 
   /**
    * A hex color to set the toolbar color to.
@@ -185,45 +263,92 @@ export interface CameraOptions {
    */
   allowEditing?: boolean;
   /**
-   * How the data should be returned. Currently, only base64 is supported
+   * How the data should be returned. Currently, only 'base64' or 'uri' is supported
    */
-  resultType: 'base64'
+  resultType: CameraResultType;
   /**
    * Whether to save the photo to the gallery/photostream
    */
   saveToGallery?: boolean;
+  /**
+   * The width of the saved image
+   */
+  width?: number;
+  /**
+   * The height of the saved image
+   */
+  height?: number;
+  /**
+   * Whether to automatically rotate the image "up" to correct for orientation
+   * in portrait mode
+   * Default: true
+   */
+  correctOrientation?: boolean;
+  /**
+   * The source to get the photo from. By default this prompts the user to select
+   * either the photo album or take a photo.
+   * Default: CameraSource.Prompt
+   */
+  source?: CameraSource;
+}
+
+export enum CameraSource {
+  Prompt = 'PROMPT',
+  Camera = 'CAMERA',
+  Photos = 'PHOTOS'
 }
 
 export interface CameraPhoto {
-  base64_data: string;
+  /**
+   * The base64 encoded data of the image, if using CameraResultType.Base64.
+   */
+  base64Data?: string;
+  /**
+   * If using CameraResultType.Uri, the path will contain a full,
+   * platform-specific file URL that can be read later using the Filsystem API.
+   */
+  path?: string;
+  /**
+   * webPath returns a path that can be used to set the src attribute of an image for efficient
+   * loading and rendering.
+   */
+  webPath?: string;
+  /**
+   * The format of the image. Currently, only "jpeg" is supported.
+   */
   format: string;
+}
+
+export enum CameraResultType {
+  Uri = 'uri',
+  Base64 = 'base64'
 }
 
 //
 
 export interface ClipboardPlugin extends Plugin {
   /**
-   * Set a value on the clipboard (the "copy" action)
+   * Write a value to the clipboard (the "copy" action)
    */
-  set(options: ClipboardSet): Promise<void>;
+  write(options: ClipboardWrite): Promise<void>;
   /**
-   * Get a value from the clipboard (the "paste" action)
+   * Read a value from the clipboard (the "paste" action)
    */
-  get(options: ClipboardGet): Promise<ClipboardGetResult>;
+  read(options: ClipboardRead): Promise<ClipboardReadResult>;
 }
 
-export interface ClipboardSet {
+export interface ClipboardWrite {
   string?: string;
   image?: string;
   url?: string;
   label?: string; // Android only
 }
 
-export interface ClipboardGet {
+export interface ClipboardRead {
   type: 'string' | 'url' | 'image';
 }
 
-export interface ClipboardGetResult {
+export interface ClipboardReadResult {
   value: string;
 }
 
@@ -267,27 +392,27 @@ export interface DeviceInfo {
    */
   isVirtual: boolean;
   /**
-   * Approximate memory used by the current app, in bytes. Divide by 
+   * Approximate memory used by the current app, in bytes. Divide by
    * 1048576 to get the number of MBs used.
    */
-  memUsed: number;
+  memUsed?: number;
   /**
    * How much free disk space is available on the the normal data storage
    * path for the os, in bytes
    */
-  diskFree: number;
+  diskFree?: number;
   /**
    * The total size of the normal data storage path for the OS, in bytes
    */
-  diskTotal: number;
+  diskTotal?: number;
   /**
    * A percentage (0 to 1) indicating how much the battery is charged
    */
-  batteryLevel: number;
+  batteryLevel?: number;
   /**
    * Whether the device is charging
    */
-  isCharging: boolean;
+  isCharging?: boolean;
 }
 
 //
@@ -298,55 +423,62 @@ export interface FilesystemPlugin extends Plugin {
    * @param options options for the file read
    * @return a promise that resolves with the read file data result
    */
-  readFile(options: FileReadOptions) : Promise<FileReadResult>;
+  readFile(options: FileReadOptions): Promise<FileReadResult>;
 
   /**
    * Write a file to disk in the specified location on device
    * @param options options for the file write
    * @return a promise that resolves with the file write result
    */
-  writeFile(options: FileWriteOptions) : Promise<FileWriteResult>;
+  writeFile(options: FileWriteOptions): Promise<FileWriteResult>;
 
   /**
    * Append to a file on disk in the specified location on device
    * @param options options for the file append
    * @return a promise that resolves with the file write result
    */
-  appendFile(options: FileAppendOptions) : Promise<FileAppendResult>;
+  appendFile(options: FileAppendOptions): Promise<FileAppendResult>;
 
   /**
    * Delete a file from disk
    * @param options options for the file delete
    * @return a promise that resolves with the deleted file data result
    */
-  deleteFile(options: FileDeleteOptions) : Promise<FileDeleteResult>;
+  deleteFile(options: FileDeleteOptions): Promise<FileDeleteResult>;
 
   /**
    * Create a directory.
    * @param options options for the mkdir
    * @return a promise that resolves with the mkdir result
    */
-  mkdir(options: MkdirOptions) : Promise<MkdirResult>;
+  mkdir(options: MkdirOptions): Promise<MkdirResult>;
 
   /**
    * Remove a directory
    * @param options the options for the directory remove
    */
-  rmdir(options: RmdirOptions) : Promise<RmdirResult>;
+  rmdir(options: RmdirOptions): Promise<RmdirResult>;
 
   /**
    * Return a list of files from the directory (not recursive)
    * @param options the options for the readdir operation
    * @return a promise that resolves with the readdir directory listing result
    */
-  readdir(options: ReaddirOptions) : Promise<ReaddirResult>;
+  readdir(options: ReaddirOptions): Promise<ReaddirResult>;
+
+  /**
+   * Return full File URI for a path and directory
+   * @param options the options for the stat operation
+   * @return a promise that resolves with the file stat result
+   */
+  getUri(options: GetUriOptions): Promise<GetUriResult>;
 
   /**
    * Return data about a file
    * @param options the options for the stat operation
    * @return a promise that resolves with the file stat result
    */
-  stat(options: StatOptions) : Promise<StatResult>;
+  stat(options: StatOptions): Promise<StatResult>;
 }
 
 export enum FilesystemDirectory {
@@ -380,7 +512,7 @@ export enum FilesystemEncoding {
   UTF8 = 'utf8',
   ASCII = 'ascii',
   UTF16 = 'utf18'
-};
+}
 
 export interface FileWriteOptions {
   /**
@@ -394,11 +526,11 @@ export interface FileWriteOptions {
   /**
    * The FilesystemDirectory to store the file in
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
   /**
    * The encoding to write the file in (defautls to utf8)
    */
-  encoding: FilesystemEncoding;
+  encoding?: FilesystemEncoding;
 }
 
 export interface FileAppendOptions {
@@ -413,11 +545,11 @@ export interface FileAppendOptions {
   /**
    * The FilesystemDirectory to store the file in
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
   /**
    * The encoding to write the file in (defautls to utf8)
    */
-  encoding: FilesystemEncoding;
+  encoding?: FilesystemEncoding;
 }
 
 export interface FileReadOptions {
@@ -428,11 +560,14 @@ export interface FileReadOptions {
   /**
    * The FilesystemDirectory to read the file from
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
   /**
-   * The encoding to read the file in (defautls to utf8)
+   * The encoding to read the file in, if not provided, data
+   * is read as binary and returned as base64 encoded data.
+   *
+   * Pass FilesystemEncoding.UTF8 to read data as string
    */
-  encoding: FilesystemEncoding;
+  encoding?: FilesystemEncoding;
 }
 
 export interface FileDeleteOptions {
@@ -443,7 +578,7 @@ export interface FileDeleteOptions {
   /**
    * The FilesystemDirectory to delete the file from
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
 }
 
 export interface MkdirOptions {
@@ -454,7 +589,7 @@ export interface MkdirOptions {
   /**
    * The FilesystemDirectory to make the new directory in
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
   /**
    * Whether to create any missing parent directories as well
    */
@@ -469,7 +604,7 @@ export interface RmdirOptions {
   /**
    * The FilesystemDirectory to remove the directory from
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
 }
 
 export interface ReaddirOptions {
@@ -479,6 +614,17 @@ export interface ReaddirOptions {
   path: string;
   /**
    * The FilesystemDirectory to remove the directory from
+   */
+  directory?: FilesystemDirectory;
+}
+
+export interface GetUriOptions {
+  /**
+   * The path of the file to get the URI for
+   */
+  path: string;
+  /**
+   * The FilesystemDirectory to get the file under
    */
   directory: FilesystemDirectory;
 }
@@ -491,7 +637,7 @@ export interface StatOptions {
   /**
    * The FilesystemDirectory to remove the directory from
    */
-  directory: FilesystemDirectory;
+  directory?: FilesystemDirectory;
 }
 
 export interface FileReadResult {
@@ -510,11 +656,15 @@ export interface RmdirResult {
 export interface ReaddirResult {
   files: string[];
 }
+export interface GetUriResult {
+  uri: string;
+}
 export interface StatResult {
   type: string;
   size: number;
   ctime: number;
   mtime: number;
+  uri: string;
 }
 
 //
@@ -528,14 +678,12 @@ export interface GeolocationPlugin extends Plugin {
    * Set up a watch for location changes. Note that watching for location changes
    * can consume a large amount of energy. Be smart about listening only when you need to.
    */
-  watchPosition(options: GeolocationOptions, callback: GeolocationWatchCallback) : void;
+  watchPosition(options: GeolocationOptions, callback: GeolocationWatchCallback): CallbackID;
 
   /**
    * Clear a given watch
    */
-  /*
   clearWatch(options: { id: string }): Promise<void>;
-  */
 }
 
 export interface GeolocationPosition {
@@ -562,23 +710,23 @@ export interface GeolocationPosition {
 }
 
 export interface GeolocationOptions {
-  enableHighAccuracy?: boolean, // default: false
-  timeout?: number, // default: 10000,
-  maximumAge?: number // default: 0
+  enableHighAccuracy?: boolean; // default: false
+  timeout?: number; // default: 10000,
+  maximumAge?: number; // default: 0
   /**
    * Whether your app needs altitude data or not. This can impact the
    * sensor the device uses, increasing energy consumption.
-   * Note: altitude information may not be available even when 
+   * Note: altitude information may not be available even when
    * passing true here. Similarly, altitude data maybe be returned
    * even if this value is false, in the case where doing so requires
    * no increased energy consumption.
-   * 
+   *
    * Default: false
    */
-  requireAltitude?: boolean, // default: false
+  requireAltitude?: boolean; // default: false
 }
 
-export type GeolocationWatchCallback = (err: any, position: GeolocationPosition) => void;
+export type GeolocationWatchCallback = (position: GeolocationPosition, err?: any) => void;
 
 //
 
@@ -723,8 +871,8 @@ export interface LocalNotificationsPlugin extends Plugin {
   getPending(): Promise<LocalNotificationPendingList>;
   registerActionTypes(options: { types: LocalNotificationActionType[] }): Promise<void>;
   cancel(pending: LocalNotificationPendingList): Promise<void>;
-  addListener(eventName: 'localNotificationReceived', listenerFunc: (err: any, notification: LocalNotification) => void): PluginListenerHandle;
-  addListener(eventName: 'localNotificationActionPerformed', listenerFunc: (err: any, notification: LocalNotificationActionPerformed) => void): PluginListenerHandle;
+  addListener(eventName: 'localNotificationReceived', listenerFunc: (notification: LocalNotification) => void): PluginListenerHandle;
+  addListener(eventName: 'localNotificationActionPerformed', listenerFunc: (notification: LocalNotificationActionPerformed) => void): PluginListenerHandle;
 }
 
 
@@ -749,32 +897,27 @@ export interface ModalsPlugin extends Plugin {
    * to select.
    */
   showActions(options: ActionSheetOptions): Promise<ActionSheetResult>;
-   
-  /**
-   * Show a Share modal for sharing content in your app with other apps
-   */
-  showSharing(options: any): Promise<any>;
 }
 
 export interface AlertOptions {
-  title: string,
-  message: string,
-  buttonTitle?: string
+  title: string;
+  message: string;
+  buttonTitle?: string;
 }
 
 export interface PromptOptions {
-  title: string,
-  message: string,
-  okButtonTitle?: string,
-  cancelButtonTitle?: string,
-  inputPlaceholder?: string
+  title: string;
+  message: string;
+  okButtonTitle?: string;
+  cancelButtonTitle?: string;
+  inputPlaceholder?: string;
 }
 
 export interface ConfirmOptions {
-  title: string,
-  message: string,
-  okButtonTitle?: string,
-  cancelButtonTitle?: string
+  title: string;
+  message: string;
+  okButtonTitle?: string;
+  cancelButtonTitle?: string;
 }
 
 export interface PromptResult {
@@ -794,21 +937,21 @@ export interface ActionSheetOptions {
 
 export enum ActionSheetOptionStyle {
   Default = 'DEFAULT',
-  Destructive = 'DESTRUCTIVE'
-};
+  Destructive = 'DESTRUCTIVE',
+  Cancel = 'CANCEL'
+}
+
 export interface ActionSheetOption {
   title: string;
-  style?: ActionSheetOptionStyle
+  style?: ActionSheetOptionStyle;
+  /**
+   * Icon for web (ionicon naming convention)
+   */
+  icon?: string;
 }
 
 export interface ActionSheetResult {
-  option: ActionSheetOption;
-}
-
-export interface ShareSheetOptions {
-  message?: string;
-  url?: string;
-  subject?: string;
+  index: number;
 }
 
 //
@@ -824,8 +967,8 @@ export interface MotionPlugin extends Plugin {
   addListener(eventName: 'orientation', listenerFunc: (event: MotionOrientationEventResult) => void): PluginListenerHandle;
 }
 
-export type MotionWatchOrientationCallback = (err: any, accel: MotionOrientationEventResult) => void;
-export type MotionWatchAccelCallback = (err: any, accel: MotionEventResult) => void;
+export type MotionWatchOrientationCallback = (accel: MotionOrientationEventResult) => void;
+export type MotionWatchAccelCallback = (accel: MotionEventResult) => void;
 
 export interface MotionOrientationEventResult {
   alpha: number;
@@ -864,15 +1007,15 @@ export interface NetworkPlugin extends Plugin {
   /**
    * Listen for network status change events
    */
-  addListener(eventName: 'networkStatusChange', listenerFunc: (err: any, status: NetworkStatus) => void): PluginListenerHandle;
+  addListener(eventName: 'networkStatusChange', listenerFunc: (status: NetworkStatus) => void): PluginListenerHandle;
 }
 
 export interface NetworkStatus {
   connected: boolean;
-  connectionType: 'wifi' | 'cellular' | 'none';
+  connectionType: 'wifi' | 'cellular' | 'none' | 'unknown';
 }
 
-export type NetworkStatusChangeCallback = (err: any, status: NetworkStatus) => void;
+export type NetworkStatusChangeCallback = (status: NetworkStatus) => void;
 
 //
 
@@ -1026,7 +1169,7 @@ export interface PhotosAlbum {
    * Name of the album
    */
   name: string;
-  /** 
+  /**
    * Number of items in the album
    */
   count: number;
@@ -1057,15 +1200,44 @@ export enum PhotosAlbumType {
 
 //
 
+export interface SharePlugin extends Plugin {
+  /**
+   * Show a Share modal for sharing content in your app with other apps
+   */
+  share(options: ShareOptions): Promise<any>;
+}
+
+export interface ShareOptions {
+  /**
+   * Set a title for any message. This will be the subject
+   * if sharing to email
+   */
+  title?: string;
+  /**
+   * Set some text to share
+   */
+  text?: string;
+  /**
+   * Set a URL to share
+   */
+  url?: string;
+  /**
+   * Set a title for the share modal. Android only
+   */
+  dialogTitle?: string;
+}
+
+//
+
 export interface SplashScreenPlugin extends Plugin {
   /**
    * Show the splash screen
    */
-  show(options?: SplashScreenShowOptions, callback?: Function) : void;
+  show(options?: SplashScreenShowOptions, callback?: Function): void;
   /**
    * Hide the splash screen
    */
-  hide(options?: SplashScreenHideOptions, callback?: Function) : void;
+  hide(options?: SplashScreenHideOptions, callback?: Function): void;
 }
 
 export interface SplashScreenShowOptions {
@@ -1103,13 +1275,17 @@ export interface StatusBarPlugin extends Plugin {
    */
   setStyle(options: StatusBarStyleOptions): Promise<void>;
   /**
+   *  Set the background color of the status bar
+   */
+  setBackgroundColor(options: StatusBarBackgroundColorOptions): Promise<void>;
+  /**
    * Show the status bar
    */
-  show() : Promise<void>;
+  show(): Promise<void>;
   /**
    *  Hide the status bar
    */
-  hide() : Promise<void>;
+  hide(): Promise<void>;
 }
 
 export interface StatusBarStyleOptions {
@@ -1119,4 +1295,40 @@ export interface StatusBarStyleOptions {
 export enum StatusBarStyle {
   Dark = 'DARK',
   Light = 'LIGHT'
+}
+
+export interface StatusBarBackgroundColorOptions {
+  color: string;
+}
+
+export interface StoragePlugin extends Plugin {
+  /**
+   * Get the value with the given key.
+   */
+  get(options: { key: string }): Promise<{ value: string }>;
+  /**
+   * Set the value for the given key
+   */
+  set(options: { key: string, value: string }): Promise<void>;
+  /**
+   * Remove the value for this key (if any)
+   */
+  remove(options: { key: string }): Promise<void>;
+  /**
+   * Clear stored keys and values.
+   */
+  clear(): Promise<void>;
+  /**
+   * Return the list of known keys
+   */
+  keys(): Promise<{ keys: string[] }>;
+}
+
+export interface ToastPlugin extends Plugin {
+  show(options: ToastShowOptions): Promise<void>;
+}
+
+export interface ToastShowOptions {
+  text: string;
+  duration?: 'short' | 'long';
 }

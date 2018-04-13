@@ -1,5 +1,6 @@
 export {
   PluginCallback,
+  PluginListenerHandle,
   PluginResultData,
   PluginResultError,
   PluginConfig
@@ -8,3 +9,4 @@ export {
 export * from './core-plugin-definitions';
 export * from './global';
 export * from './web-plugins';
+export * from './web/index';

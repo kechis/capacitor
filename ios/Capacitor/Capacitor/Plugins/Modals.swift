@@ -3,8 +3,8 @@ import Foundation
 /**
  * Implement three common modal types: alert, confirm, and prompt
  */
-@objc(Modals)
-public class Modals : CAPPlugin {
+@objc(CAPModalsPlugin)
+public class CAPModalsPlugin : CAPPlugin {
   @objc public func alert(_ call: CAPPluginCall) {
     guard let title = call.options["title"] as? String else {
       call.error("title must be provided")
@@ -118,52 +118,8 @@ public class Modals : CAPPlugin {
       
       controller.addAction(action)
     }
+    self.setCenteredPopover(controller)
     
     return controller
-  }
-  
-  @objc func showSharing(_ call: CAPPluginCall) {
-    var items = [Any]()
-    
-    if let message = call.options["message"] as? String {
-      items.append(message)
-    }
-    
-    if let url = call.options["url"] as? String {
-      let urlObj = URL(string: url)
-      items.append(urlObj!)
-    }
-    
-    let subject = call.getString("subject")
-    
-    if items.count == 0 {
-      call.error("Must provide at least url or message")
-      return
-    }
-    
-    DispatchQueue.main.async {
-      let actionController = UIActivityViewController(activityItems: items, applicationActivities: nil)
-      
-      if subject != nil {
-        // https://stackoverflow.com/questions/17020288/how-to-set-a-mail-subject-in-uiactivityviewcontroller
-        actionController.setValue(subject, forKey: "subject")
-      }
-      
-      actionController.completionWithItemsHandler = { (activityType, completed, _ returnedItems, activityError) in
-        if activityError != nil {
-          call.error("Error sharing item", activityError)
-          return
-        }
-        
-        // TODO: Support returnedItems
-        
-        call.success([
-          "completed": completed,
-          "activityType": activityType?.rawValue ?? ""
-        ])
-      }
-      
-      self.bridge.viewController.present(actionController, animated: true, completion: nil)
-    }
   }
 }

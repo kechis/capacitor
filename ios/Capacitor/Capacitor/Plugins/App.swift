@@ -1,8 +1,7 @@
 import Foundation
-import SafariServices
 
-@objc(App)
-public class App : CAPPlugin {
+@objc(CAPAppPlugin)
+public class CAPAppPlugin : CAPPlugin {
   var lastUrlOpenOptions: [String:Any?]?
   
   public override func load() {
@@ -49,6 +48,10 @@ public class App : CAPPlugin {
     notifyListeners("appStateChange", data: [
       "isActive": isActive
     ])
+  }
+  
+  @objc func exitApp(_ call: CAPPluginCall) {
+    // No-op, this isn't allowed by Apple
   }
   
   @objc func getLaunchUrl(_ call: CAPPluginCall) {

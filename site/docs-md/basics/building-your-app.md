@@ -1,36 +1,59 @@
 # Building your App
 
-Capacitor works on a three-step build process. First, your web code is built if necessary. Next, the built web code is copied to each platform, and finally the app is compiled using the platform-specific tooling.
+Capacitor works on a three-step build process: First, your web code is built (if necessary). Next, the built web code is copied to each platform. Finally, the app is compiled using the platform-specific tooling.
 
-## iOS
+## 1. Building web code
 
-iOS relies on Xcode to do the final app compile
+Capacitor does not have any built-in feature to build web code. Instead, you will use your framework's build process of choice.
 
-```bash
-npm run capacitor build
-npm run capacitor copy ios
-npm run capacitor open ios
+Regardless of your build process, we recommend adding a `build` script to your `package.json` to enable the standard frontend
+build command:
+
+```json
+{
+  "scripts": {
+    "build": "command-to-build (ex: webpack, tsc, babel, etc.)"
+  }
+}
 ```
 
-Once XCode launches, you can build your finally app binary through the standard XCode workflow.
-
-## Android
-
-```bash
-npm run capacitor build
-npm run capacitor copy android
-npm run capacitor compile android
-```
-
-## Web
-
-Capacitor doesn't require any kind of build step for your web code. If you're using the standard
-"build" script in npm, then just run
 
 ```bash
 npm run build
 ```
 
-And capacitor will use the built web code in your `webDir` in your `capacitor.config.json`.
+This builds your Progressive Web App if you've configured <stencil-route-link url="/docs/basics/progressive-web-app">Progressive Web App</stencil-route-link> support already.
 
-If your web app doesn't need a build step, then skip the build and you're good to go.
+## 2. Copying Web Code
+
+Once your web code is built, it needs to be copied to each native project:
+
+```bash
+npx cap copy
+```
+
+This should be run each time you perform a build. Feel free to add this command to the end of your build script in `package.json`
+
+## 3. Building Native Project
+
+### iOS
+
+iOS relies on Xcode to do the final app compile
+
+```bash
+npx cap copy ios
+npx cap open ios
+```
+
+Once Xcode launches, you can build your finally app binary through the standard Xcode workflow.
+
+### Android
+
+Currently, Android relies on Android Studio (or, optionally, the Android CLI tools) to build the app:
+
+```bash
+npx cap copy android
+npx cap open android
+```
+
+Once Android Studio launches, you can build your app through the standard Android Studio workflow.

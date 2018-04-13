@@ -1,38 +1,19 @@
-# Getting Started With Capacitor
+# Installing Capacitor
 
-There are two ways to start using Capacitor: adding Capacitor to an existing frontend project, or starting a fresh project.
+There are two ways to start using Capacitor: adding Capacitor to an existing frontend project (recommended), or starting a fresh project. Capacitor was designed primarily to drop-in to existing frontend projects, but comes with a simple starting project structure if you'd like to start fresh.
 
 Capacitor provides a native mobile runtime and API layer for web apps. It does _not_ come with any specific
 set of UI controls which you will most likely need unless you're building a game or something similar.
 
-We strongly recommend starting an Capacitor project with your mobile frontend framework of choice (such as Ionic),
+We strongly recommend starting a Capacitor project with your mobile frontend framework of choice (such as Ionic),
 though we also provide a blank starter for apps that aren't using a frontend UI framework, and a starter that uses Ionic and
 is ready for building a production-ready native app and Progressive Web App.
 
-## Starting a fresh project
+## Before you start
 
-To start a fresh Capacitor project, first clone the starter base:
+Make sure you have all the required [Dependencies](./dependencies) installed for the platforms you will be building for. Most importantly,
+make sure you update CocoaPods using `pod repo update` before starting a new project, if you plan on building for iOS using a Mac.
 
-```
-git clone git@github.com/ionic-team/capacitor-starter.git my-app
-cd my-app
-npm install
-```
-
-Next, run the capacitor initialization command _in the directory of the app_.
-
-```
-npm run capacitor init
-```
-
-When prompted for the starter template to use, choose either the official Ionic template, or 
-select blank. Note: blank does not come with any UI framework which you will most likely need!
-
-## Using Capacitor Starter with Ionic Framework
-
-Integration into the Ionic CLI is coming soon. For now, use our stock starter.
-
-First, clone the project as shown above, then select the "Ionic" starter when prompted.
 
 ## Adding Capacitor to an existing web app
 
@@ -42,12 +23,46 @@ To add Capacitor to your web app, run the following commands:
 
 ```
 cd my-app
-npm install @capacitor/core @capacitor/cli
-npm run capacitor init
+npm install --save @capacitor/core @capacitor/cli
 ```
 
-When prompted whether this is a new project, select "n"
+Then, init Capacitor with your app information. This will also install the default
+native platforms.
+
+```
+npx cap init
+```
+
+This command will prompt you to enter the name of your app, the app id (used primarily as the package for android), and the directory of your app.
+
+Capacitor is now installed in your project 🎉
+
+*Note: `npx` is a new utility available in npm 5 or above that executes local binaries/scripts to avoid global installs.*
+
+## Using Capacitor Starter with Ionic Framework
+
+Integration into the Ionic CLI is coming soon.
+
+For now, create a new ionic app using `ionic start`, then follow the steps above to add
+Capacitor to an existing web app (in this case, your new Ionic app).
+
+
+## Optional: Starting a fresh project
+
+Capacitor comes with a stock project structure if you'd rather start fresh and plan to add a UI/frontend framework separately.
+
+To create it, run:
+
+```
+npx @capacitor/cli create
+```
+
+This command will prompt you to enter the name of your app, the app id (used primarily as the package for android), and the directory of your app.
+
+This will create a very simple starting app with no UI library that you should nuke before
+starting your own app.
 
 ## Where to go next
 
-Your app is ready to start developing and testing! Follow the [Getting Started with Development Guide](/docs/getting-started/developing) for information on the development process of a Capacitor app.
+Make sure you have the [Required Dependencies](/docs/getting-started/dependencies) installed, then proceed to the
+[Developer Workflow Guide](/docs/basics/workflow) to learn how Capacitor apps are built.

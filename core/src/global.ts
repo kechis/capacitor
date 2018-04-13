@@ -1,11 +1,19 @@
 import { Capacitor as _Capacitor } from './definitions';
 
-var Capacitor:_Capacitor = {
-  Plugins: {}
-};
-
 declare var window: any;
+
+import { CapacitorWeb } from './web-runtime';
+
+// Create our default Capacitor instance, which will be
+// overridden on native platforms
+var Capacitor: _Capacitor = new CapacitorWeb();
+
 Capacitor = window.Capacitor || Capacitor;
+
+// Export window.Capacitor if not available already (ex: web)
+if (!window.Capacitor) {
+  window.Capacitor = Capacitor;
+}
 
 const Plugins = Capacitor.Plugins;
 
